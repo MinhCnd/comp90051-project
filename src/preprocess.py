@@ -59,11 +59,11 @@ def application_train(folder_path: Path, num_rows=None, nan_as_category=False):
     # Create new features using concat to avoid dataframe fragmentation
     new_time_cols = pd.DataFrame(
         {
-            'DAYS_EMPLOYED': days_employed,
+            'YEARS_EMPLOYED': days_employed / -DAYS_PER_YEAR,
             'AGE_YEARS': df['DAYS_BIRTH'] / -DAYS_PER_YEAR,
             'YEARS_REGISTRATION': df['DAYS_REGISTRATION'] / -DAYS_PER_YEAR,
             'YEARS_ID_PUBLISH': df['DAYS_ID_PUBLISH'] / -DAYS_PER_YEAR,
-            'DAYS_LAST_PHONE_CHANGE': df['DAYS_LAST_PHONE_CHANGE'] / -DAYS_PER_YEAR,
+            'YEARS_LAST_PHONE_CHANGE': df['DAYS_LAST_PHONE_CHANGE'] / -DAYS_PER_YEAR,
         },
         index=df.index,
     )
@@ -290,11 +290,13 @@ def installments_payments(folder_path: Path, num_rows = None, nan_as_category = 
     ins['DBD'] = ins['DBD'].apply(lambda x: x if x > 0 else 0)
 
     #Scale relevant features
-    features_to_scale = ['PAYMENT_DIFF', 'AMT_INSTALMENT', 'AMT_PAYMENT']
+    features_to_scale = ['AMT_INSTALMENT', 'AMT_PAYMENT']
     scaled_cols = pd.DataFrame(
         {f'{feature}_SCALED': np.log1p(ins[feature]) for feature in features_to_scale},
         index=ins.index,
     )
+    #Use signed log transform for PAYMENT_DIFF
+    ins['PAYMENT_DIFF_SCALED'] = ins['PAYMENT_DIFF'].apply(lambda x: np.sign(x) * np.log1p(abs(x)))
     ins = pd.concat([ins, scaled_cols], axis=1).copy()
 
     #Change days to years
