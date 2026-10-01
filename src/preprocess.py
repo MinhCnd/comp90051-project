@@ -290,7 +290,7 @@ def preprocess(folder_path: Path, num_rows=None, debug=False, drop_col_thres: fl
     Return:
         pd.DataFrame: The preprocessed DataFrame.
     """
-    num_rows = 500 if debug else None
+    num_rows = 500 if debug else num_rows
 
     if drop_col_thres > 1 or drop_col_thres < 0:
         raise ValueError("drop_col_thres must be between 0 and 1")
