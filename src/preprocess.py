@@ -19,7 +19,11 @@ logging.basicConfig(level=logging.INFO)
 # - In Previous Applications: create specific features for Approved and Refused applications
 # - Modularity: one function for each table (except bureau_balance and application_test)
 # - One-hot encoding for categorical features
-NONSENSE_VAL = 365243
+
+# `DAYS_EMPLOYED` contains an extreme outlier value: **365243** that Home Credit uses as a placeholder for retired, unemployed, or missing records).
+PLACEHOLDER = 365243
+DAYS_PER_YEAR = 365.25
+
 @contextmanager
 def timer(title):
     t0 = time.time()
@@ -50,15 +54,35 @@ def application_train(folder_path: Path, num_rows=None, nan_as_category=False):
     df, cat_cols = one_hot_encoder(df, nan_as_category)
     
     # NaN values for DAYS_EMPLOYED: 365.243 -> nan
-    days_employed = df['DAYS_EMPLOYED'].replace(365243, np.nan)
-    df['DAYS_EMPLOYED'] = days_employed
+    days_employed = df['DAYS_EMPLOYED'].replace(PLACEHOLDER, np.nan)
+    
+    # Create new features using concat to avoid dataframe fragmentation
+    new_time_cols = pd.DataFrame(
+        {
+            'DAYS_EMPLOYED': days_employed,
+            'AGE_YEARS': df['DAYS_BIRTH'] / -DAYS_PER_YEAR,
+            'YEARS_REGISTRATION': df['DAYS_REGISTRATION'] / -DAYS_PER_YEAR,
+            'YEARS_ID_PUBLISH': df['DAYS_ID_PUBLISH'] / -DAYS_PER_YEAR,
+            'DAYS_LAST_PHONE_CHANGE': df['DAYS_LAST_PHONE_CHANGE'] / -DAYS_PER_YEAR,
+        },
+        index=df.index,
+    )
+    df = pd.concat([df.drop(columns=['DAYS_EMPLOYED', 'DAYS_REGISTRATION', 'DAYS_ID_PUBLISH', 'DAYS_LAST_PHONE_CHANGE'], errors='ignore'), new_time_cols], axis=1).copy()
+
+    #AMT_INCOME_TOTAL, AMT_CREDIT, AMT_ANNUITY exhibit extreme range, apply natural log scaling
+    features_to_scale = ['AMT_INCOME_TOTAL', 'AMT_CREDIT', 'AMT_ANNUITY', 'AMT_GOODS_PRICE']
+    scaled_cols = pd.DataFrame(
+        {f'{feature}_SCALED': np.log1p(df[feature]) for feature in features_to_scale},
+        index=df.index,
+    )
+    df = pd.concat([df, scaled_cols], axis=1).copy()
 
     # Some simple new features (percentages)
     new_cols = pd.DataFrame(
         {
             'DAYS_EMPLOYED_PERC': days_employed / df['DAYS_BIRTH'],
             'INCOME_CREDIT_PERC': df['AMT_INCOME_TOTAL'] / df['AMT_CREDIT'],
-            'INCOME_PER_PERSON': df['AMT_INCOME_TOTAL'] / df['CNT_FAM_MEMBERS'],
+            'INCOME_PER_PERSON_SCALED': np.log1p(df['AMT_INCOME_TOTAL'] / df['CNT_FAM_MEMBERS']),
             'ANNUITY_INCOME_PERC': df['AMT_ANNUITY'] / df['AMT_INCOME_TOTAL'],
             'PAYMENT_RATE': df['AMT_ANNUITY'] / df['AMT_CREDIT'],
         },
@@ -82,6 +106,10 @@ def application_train(folder_path: Path, num_rows=None, nan_as_category=False):
         )
 
     df = pd.concat([df, new_cols], axis=1).copy()
+
+    #Drop unscaled features
+    df = df.drop(columns=['DAYS_BIRTH'])
+    df = df.drop(columns=[f'{feature}' for feature in features_to_scale], errors='ignore')
 
     gc.collect()
     return df
@@ -166,25 +194,40 @@ def previous_applications(folder_path: Path, num_rows = None, nan_as_category = 
     prev = pd.read_csv(f'{folder_path}/previous_application.csv', nrows = num_rows)
     prev, cat_cols = one_hot_encoder(prev, nan_as_category)
     # Days 365.243 values -> nan
-    prev['DAYS_FIRST_DRAWING'] = prev['DAYS_FIRST_DRAWING'].replace(NONSENSE_VAL, np.nan)
-    prev['DAYS_FIRST_DUE'] = prev['DAYS_FIRST_DUE'].replace(NONSENSE_VAL, np.nan)
-    prev['DAYS_LAST_DUE_1ST_VERSION'] = prev['DAYS_LAST_DUE_1ST_VERSION'].replace(NONSENSE_VAL, np.nan)
-    prev['DAYS_LAST_DUE'] = prev['DAYS_LAST_DUE'].replace(NONSENSE_VAL, np.nan)
-    prev['DAYS_TERMINATION'] = prev['DAYS_TERMINATION'].replace(NONSENSE_VAL, np.nan)
+    prev['DAYS_FIRST_DRAWING'] = prev['DAYS_FIRST_DRAWING'].replace(PLACEHOLDER, np.nan)
+    prev['DAYS_FIRST_DUE'] = prev['DAYS_FIRST_DUE'].replace(PLACEHOLDER, np.nan)
+    prev['DAYS_LAST_DUE_1ST_VERSION'] = prev['DAYS_LAST_DUE_1ST_VERSION'].replace(PLACEHOLDER, np.nan)
+    prev['DAYS_LAST_DUE'] = prev['DAYS_LAST_DUE'].replace(PLACEHOLDER, np.nan)
+    prev['DAYS_TERMINATION'] = prev['DAYS_TERMINATION'].replace(PLACEHOLDER, np.nan)
     # Add feature: value ask / value received percentage
     prev['APP_CREDIT_PERC'] = prev['AMT_APPLICATION'] / prev['AMT_CREDIT']
+
+    prev['DAYS_DECISION'] = prev['DAYS_DECISION'].replace(PLACEHOLDER, np.nan)
+    prev['YEARS_DECISION'] = prev['DAYS_DECISION'] / -DAYS_PER_YEAR
+    prev=prev.drop(['DAYS_DECISION'], axis=1)
+
+    #ln Scale features
+    features_to_scale = ['AMT_ANNUITY', 'AMT_APPLICATION', 'AMT_CREDIT', 'AMT_DOWN_PAYMENT', 'AMT_GOODS_PRICE']
+
+    scaled_cols = pd.DataFrame(
+        {f'{feature}_SCALED': np.log1p(prev[feature]) for feature in features_to_scale},
+        index=prev.index,
+    )
+    prev = pd.concat([prev, scaled_cols], axis=1).copy()
+    #Remove unscaled features
+    prev = prev.drop(columns=features_to_scale)
     
     # Previous applications numeric features
     num_aggregations = {
-        'AMT_ANNUITY': ['min', 'max', 'mean'],
-        'AMT_APPLICATION': ['min', 'max', 'mean'],
-        'AMT_CREDIT': ['min', 'max', 'mean'],
+        'AMT_ANNUITY_SCALED': ['min', 'max', 'mean'],
+        'AMT_APPLICATION_SCALED': ['min', 'max', 'mean'],
+        'AMT_CREDIT_SCALED': ['min', 'max', 'mean'],
         'APP_CREDIT_PERC': ['min', 'max', 'mean', 'var'],
-        'AMT_DOWN_PAYMENT': ['min', 'max', 'mean'],
-        'AMT_GOODS_PRICE': ['min', 'max', 'mean'],
+        'AMT_DOWN_PAYMENT_SCALED': ['min', 'max', 'mean'],
+        'AMT_GOODS_PRICE_SCALED': ['min', 'max', 'mean'],
         'HOUR_APPR_PROCESS_START': ['min', 'max', 'mean'],
         'RATE_DOWN_PAYMENT': ['min', 'max', 'mean'],
-        'DAYS_DECISION': ['min', 'max', 'mean'],
+        'YEARS_DECISION': ['min', 'max', 'mean'],
         'CNT_PAYMENT': ['mean', 'sum'],
     }
     # Previous applications categorical features
@@ -206,6 +249,8 @@ def previous_applications(folder_path: Path, num_rows = None, nan_as_category = 
     prev_agg = prev_agg.join(refused_agg, how='left', on='SK_ID_CURR')
     del refused, refused_agg, approved, approved_agg, prev
     gc.collect()
+    
+
     return prev_agg
 
 # Preprocess POS_CASH_balance.csv
@@ -243,16 +288,28 @@ def installments_payments(folder_path: Path, num_rows = None, nan_as_category = 
     ins['DBD'] = ins['DAYS_INSTALMENT'] - ins['DAYS_ENTRY_PAYMENT']
     ins['DPD'] = ins['DPD'].apply(lambda x: x if x > 0 else 0)
     ins['DBD'] = ins['DBD'].apply(lambda x: x if x > 0 else 0)
+
+    #Scale relevant features
+    features_to_scale = ['PAYMENT_DIFF', 'AMT_INSTALMENT', 'AMT_PAYMENT']
+    scaled_cols = pd.DataFrame(
+        {f'{feature}_SCALED': np.log1p(ins[feature]) for feature in features_to_scale},
+        index=ins.index,
+    )
+    ins = pd.concat([ins, scaled_cols], axis=1).copy()
+
+    #Change days to years
+    ins['YEARS_ENTRY_PAYMENT'] = ins['DAYS_ENTRY_PAYMENT'] / -DAYS_PER_YEAR
+    ins = ins.drop(columns=['DAYS_ENTRY_PAYMENT'])
     # Features: Perform aggregations
     aggregations = {
         'NUM_INSTALMENT_VERSION': ['nunique'],
         'DPD': ['max', 'mean', 'sum'],
         'DBD': ['max', 'mean', 'sum'],
         'PAYMENT_PERC': ['max', 'mean', 'sum', 'var'],
-        'PAYMENT_DIFF': ['max', 'mean', 'sum', 'var'],
-        'AMT_INSTALMENT': ['max', 'mean', 'sum'],
-        'AMT_PAYMENT': ['min', 'max', 'mean', 'sum'],
-        'DAYS_ENTRY_PAYMENT': ['max', 'mean', 'sum']
+        'PAYMENT_DIFF_SCALED': ['max', 'mean', 'sum', 'var'],
+        'AMT_INSTALMENT_SCALED': ['max', 'mean', 'sum'],
+        'AMT_PAYMENT_SCALED': ['min', 'max', 'mean', 'sum'],
+        'YEARS_ENTRY_PAYMENT': ['max', 'mean', 'sum']
     }
     for cat in cat_cols:
         aggregations[cat] = ['mean']
@@ -262,6 +319,7 @@ def installments_payments(folder_path: Path, num_rows = None, nan_as_category = 
     ins_agg['INSTAL_COUNT'] = ins.groupby('SK_ID_CURR').size()
     del ins
     gc.collect()
+
     return ins_agg
 
 def credit_card_balance(folder_path: Path, num_rows = None, nan_as_category = False):
@@ -336,6 +394,11 @@ def preprocess(folder_path: Path, num_rows=None, debug=False, drop_col_thres: fl
     logger.info(f"Dropping {len(cols_to_drop)} columns with more than {drop_col_thres:.0%} missing values")
     df = df.drop(columns=cols_to_drop)
 
+    #Drop rows with any missing cols
+    logger.info(f"df before dropping rows: {df.shape}")
+    df = df.dropna(axis=0, how='any')
+    logger.info(f"df after dropping rows: {df.shape}")
+
     # Diagnostic prints
     logger.info(f"Updated df shape: {df.shape}")
     target_ratio = (df['TARGET'] == 1).sum() / len(df)
@@ -344,10 +407,20 @@ def preprocess(folder_path: Path, num_rows=None, debug=False, drop_col_thres: fl
     # Count and percentage of rows with missing data
     rows_with_missing = df.isnull().any(axis=1).sum()
     pct_rows_with_missing = (rows_with_missing / len(df)) * 100
-    logger.info(f"Rows with missing data: {rows_with_missing} ({pct_rows_with_missing:.2f}%)")
+    logger.debug(f"Rows with missing data: {rows_with_missing} ({pct_rows_with_missing:.2f}%)")
+    # 5 features with most missing data, and how many in percentage
+    missing_counts = df.isnull().sum().sort_values(ascending=False)
+    missing_percentages = (missing_counts / len(df)) * 100
+    
+    logger.debug("Top 5 features with most missing data:")
+    for col, pct in missing_percentages.head(5).items():
+        logger.debug(f"  {col}: {pct:.2f}%")
 
     #Rename columns with any json special characters
     df.columns = df.columns.str.replace('[\\\/\,\:]', '', regex=True)
+
+    #Remove index column
+    df = df.drop('SK_ID_CURR', axis=1)
 
     if output_path:
         df.to_csv(output_path, index=False)
@@ -357,7 +430,10 @@ def preprocess(folder_path: Path, num_rows=None, debug=False, drop_col_thres: fl
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser()
     argparser.add_argument("-f", "--folder_path", type=Path, default=Path("data"))
-    argparser.add_argument("-d", "--drop_col_thres", type=float, default=0.10)
+    argparser.add_argument("-t", "--drop_col_thres", type=float, default=0.10)
+    argparser.add_argument("-d", "--debug", action="store_true", help="Enable debug logging")
+    
     argparser.add_argument("-o", "--output_path", type=str, default="processed_data.csv")
     args = argparser.parse_args()
-    preprocess(args.folder_path, drop_col_thres=args.drop_col_thres, output_path=args.output_path)
+
+    preprocess(args.folder_path, debug=args.debug, drop_col_thres=args.drop_col_thres, output_path=args.output_path)
