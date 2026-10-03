@@ -2,6 +2,8 @@ import numpy as np
 
 def calculate_ece(predictions: np.ndarray, labels: np.ndarray, num_bins=10) -> float:
     """Calculate Expected Calibration Error for binary classification predictions.
+
+    Reference: https://arxiv.org/html/2501.19047v2
     
     Args:
         predictions (np.ndarray): Array of shape (n, 2) with predicted probabilities and predicted labels.
