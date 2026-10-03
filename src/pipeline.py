@@ -7,7 +7,7 @@ def split_feature_and_target(df: pd.DataFrame, target_column: str) -> tuple[pd.D
     y: pd.Series = df[target_column]
     return X, y
 
-def get_continous_categorical_columns() -> tuple[list[str], list[str]]:
+def get_continuous_categorical_columns() -> tuple[list[str], list[str]]:
     cont_cols = [
         'REGION_POPULATION_RELATIVE', 'CNT_FAM_MEMBERS', 'EXT_SOURCE_2',
         'OBS_30_CNT_SOCIAL_CIRCLE', 'DEF_30_CNT_SOCIAL_CIRCLE',
@@ -79,9 +79,9 @@ def stratified_k_fold_split(y: np.ndarray, k=10, seed=None) -> list[tuple[np.nda
     np.random.shuffle(idx_class0)
     np.random.shuffle(idx_class1)
 
-    # Split class indices into K chunks
+    # Split class indices into K chunks, reversing the order of class 1 chunks to ensure varied validation sets across folds
     splits_c0 = np.array_split(idx_class0, k)
-    splits_c1 = np.array_split(idx_class1, k)
+    splits_c1 = np.array_split(idx_class1, k)[::-1]
 
     folds = []
     for i in range(k):
@@ -108,6 +108,9 @@ def subsample_to_ratio(df: pd.DataFrame, target_col: str, target_ratio: float, s
         pd.DataFrame: Subsampled dataframe as a Pandas DataFrame.
     """
 
+    if target_ratio <= 0 or target_ratio >= 1:
+        raise ValueError("target_ratio must be between 0 and 1.")
+    
     if seed is not None:
         np.random.seed(seed)
 
@@ -115,6 +118,10 @@ def subsample_to_ratio(df: pd.DataFrame, target_col: str, target_ratio: float, s
     df_neg = df[df[target_col] == 0]
 
     n_pos = len(df_pos)
+
+    if n_pos == 0:
+        raise ValueError("No positive samples found in the dataframe.")
+    
     n_neg_wanted = int(n_pos * (1 - target_ratio) / target_ratio)
 
     if n_neg_wanted > len(df_neg):

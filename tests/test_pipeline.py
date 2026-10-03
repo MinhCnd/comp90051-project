@@ -106,7 +106,7 @@ def test_subsample_to_ratio_reproducible_with_seed():
     out2 = subsample_to_ratio(df, TARGET_LABEL, 0.25, seed=42)
     # Only the negative selection is seeded before the final shuffle,
     # so compare the selected rows irrespective of order.
-    assert set(out1["feature"]) == set(out2["feature"])
+    pd.testing.assert_frame_equal(out1, out2)
 
 
 def test_subsample_to_ratio_does_not_modify_input():
