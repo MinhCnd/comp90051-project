@@ -13,6 +13,10 @@ def calculate_ece(predictions: np.ndarray, labels: np.ndarray, num_bins=10) -> f
     Returns:
         float: Expected Calibration Error (ECE).
     """
+    if predictions.ndim != 2 or predictions.shape[1] != 2:
+        raise ValueError("predictions must have shape (n, 2)")
+    if labels.ndim != 1 or labels.shape[0] != predictions.shape[0]:
+        raise ValueError("labels must have shape (n,)")
     pred_probs = predictions[:, 0]
     pred_labels = predictions[:, 1]
     
