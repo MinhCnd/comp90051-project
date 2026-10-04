@@ -1,17 +1,3 @@
-from pathlib import Path
-from typing import Optional
-import numpy as np
-import pandas as pd
-import gc
-import time
-import logging
-import argparse
-from contextlib import contextmanager
-pd.set_option('display.max_columns', None)
-
-logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO)
-
 # Source: https://www.kaggle.com/code/jsaguiar/lightgbm-with-simple-features/script
 # The following key ideas were used:
 # - Divide or subtract important features to get rates (like annuity and income)
@@ -19,6 +5,21 @@ logging.basicConfig(level=logging.INFO)
 # - In Previous Applications: create specific features for Approved and Refused applications
 # - Modularity: one function for each table (except bureau_balance and application_test)
 # - One-hot encoding for categorical features
+
+import argparse
+import gc
+import logging
+import time
+from contextlib import contextmanager
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+pd.set_option('display.max_columns', None)
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
 # `DAYS_EMPLOYED` contains an extreme outlier value: **365243** that Home Credit uses as a placeholder for retired, unemployed, or missing records).
 PLACEHOLDER = 365243
@@ -28,7 +29,7 @@ DAYS_PER_YEAR = 365.25
 def timer(title):
     t0 = time.time()
     yield
-    logger.info("{} - done in {:.0f}s".format(title, time.time() - t0))
+    logger.info(f"{title} - done in {time.time() - t0:.0f}s")
 
 def one_hot_encoder(df, nan_as_category = True):
     original_columns = list(df.columns)
@@ -39,7 +40,7 @@ def one_hot_encoder(df, nan_as_category = True):
 
 def application_train(folder_path: Path, num_rows=None, nan_as_category=False):
     df = pd.read_csv(folder_path / 'application_train.csv', nrows= num_rows)
-    logger.info("Train samples: {}".format(len(df)))
+    logger.info(f"Train samples: {len(df)}")
 
     # Remove applications with XNA CODE_GENDER
     df = df[df['CODE_GENDER'] != 'XNA']
@@ -253,7 +254,6 @@ def previous_applications(folder_path: Path, num_rows = None, nan_as_category = 
     del refused, refused_agg, approved, approved_agg, prev
     gc.collect()
     
-
     return prev_agg
 
 # Preprocess POS_CASH_balance.csv
@@ -292,8 +292,8 @@ def installments_payments(folder_path: Path, num_rows = None, nan_as_category = 
     # Days past due and days before due (no negative values)
     ins['DPD'] = ins['DAYS_ENTRY_PAYMENT'] - ins['DAYS_INSTALMENT']
     ins['DBD'] = ins['DAYS_INSTALMENT'] - ins['DAYS_ENTRY_PAYMENT']
-    ins['DPD'] = ins['DPD'].apply(lambda x: x if x > 0 else 0)
-    ins['DBD'] = ins['DBD'].apply(lambda x: x if x > 0 else 0)
+    ins['DPD'] = ins['DPD'].apply(lambda x: max(0, x))
+    ins['DBD'] = ins['DBD'].apply(lambda x: max(0, x))
 
     #Scale relevant features
     features_to_scale = ['AMT_INSTALMENT', 'AMT_PAYMENT']
@@ -350,7 +350,7 @@ def credit_card_balance(folder_path: Path, num_rows = None, nan_as_category = Fa
     gc.collect()
     return cc_agg
 
-def preprocess(folder_path: Path, num_rows=None, debug=False, drop_col_thres: float = 0.10, output_path: Optional[str] = None) -> pd.DataFrame:
+def preprocess(folder_path: Path, num_rows=None, debug=False, drop_col_thres: float = 0.10, output_path: str | None = None) -> pd.DataFrame:
     """Preprocess the data for machine learning models.
     
     Args:
@@ -432,7 +432,7 @@ def preprocess(folder_path: Path, num_rows=None, debug=False, drop_col_thres: fl
         logger.debug(f"  {col}: {pct:.2f}%")
 
     #Rename columns with any json special characters
-    df.columns = df.columns.str.replace('[\\\/\,\:]', '', regex=True)
+    df.columns = df.columns.str.replace('[\\\\/\\,\\:]', '', regex=True)
 
     #Remove index column
     df = df.drop('SK_ID_CURR', axis=1)
@@ -446,7 +446,7 @@ if __name__ == "__main__":
     argparser = argparse.ArgumentParser()
     argparser.add_argument("-f", "--folder_path", type=Path, default=Path("data"))
     argparser.add_argument("-t", "--drop_col_thres", type=float, default=0.10)
-    argparser.add_argument("-d", "--debug", action="store_true", help="Enable debug logging")
+    argparser.add_argument("-d", "--debug", action="store_true", help="Enable debug logging", default=False)
     
     argparser.add_argument("-o", "--output_path", type=str, default="processed_data.csv")
     args = argparser.parse_args()

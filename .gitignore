@@ -221,3 +221,9 @@ __marimo__/
 data/
 temp/
 .DS_Store
+
+#Pytorch
+lightning_logs/
+saved_models/
+.pt_tmp/
+wandb/

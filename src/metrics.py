@@ -1,6 +1,7 @@
 import numpy as np
 
-def calculate_ece(predictions: np.ndarray, labels: np.ndarray, num_bins=10) -> float:
+
+def get_ece(predictions: np.ndarray, labels: np.ndarray, num_bins=10) -> float:
     """Calculate Expected Calibration Error for binary classification predictions.
 
     Reference: https://arxiv.org/html/2501.19047v2
@@ -13,10 +14,6 @@ def calculate_ece(predictions: np.ndarray, labels: np.ndarray, num_bins=10) -> f
     Returns:
         float: Expected Calibration Error (ECE).
     """
-    if predictions.ndim != 2 or predictions.shape[1] != 2:
-        raise ValueError("predictions must have shape (n, 2)")
-    if labels.ndim != 1 or labels.shape[0] != predictions.shape[0]:
-        raise ValueError("labels must have shape (n,)")
     pred_probs = predictions[:, 0]
     pred_labels = predictions[:, 1]
     
@@ -39,6 +36,38 @@ def calculate_ece(predictions: np.ndarray, labels: np.ndarray, num_bins=10) -> f
     return ece
 
 
+def get_auc(predictions: np.ndarray, labels: np.ndarray) -> float:
+    """Calculate Area under the ROC curve (AUC) for binary classification predictions.
+    
+    Args:
+        predictions (np.ndarray): Array of shape (n, 2) with predicted probabilities and predicted labels.
+        labels (np.ndarray): Array of true binary labels (0 or 1).
+
+    Returns:
+        float: Area under the ROC curve (AUC).
+    """
+    pred_probs = predictions[:, 0]
+    pred_labels = predictions[:, 1]
+
+    # Sort by predicted probabilities in descending order
+    desc_order = np.argsort(-pred_probs)
+    pred_probs = pred_probs[desc_order]
+    pred_labels = pred_labels[desc_order]
+    labels = labels[desc_order]
+
+    # Calculate true positive and false positive rates
+    tpr = np.cumsum(pred_labels == labels) / np.sum(labels == 1)
+    fpr = np.cumsum(pred_labels != labels) / np.sum(labels == 0)
+
+    # Append (0,0) at the beginning
+    tpr = np.concatenate([[0], tpr])
+    fpr = np.concatenate([[0], fpr])
+
+    # Calculate AUC using the trapezoidal rule
+    auc = np.trapezoid(tpr, fpr)
+    return auc
+
+
 def calculate_brier_score(prediction_probs: np.ndarray, labels: np.ndarray) -> float:
     if prediction_probs.ndim != 1:
         raise ValueError("prediction_probs must have shape (n, 1)")
@@ -48,7 +77,6 @@ def calculate_brier_score(prediction_probs: np.ndarray, labels: np.ndarray) -> f
     labels = labels.astype(float)
     return np.mean((prediction_probs - labels)**2)
 
-    pass
 
 def calculate_recall(predictions: np.ndarray, labels: np.ndarray) -> float:
     if predictions.ndim != 1:
