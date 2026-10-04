@@ -4,7 +4,6 @@ import pytest
 
 from src.pipeline import stratified_k_fold_split, subsample_to_ratio
 
-
 TARGET_LABEL = "TARGET"
 
 def _make_labels(n0=90, n1=30) -> np.ndarray:

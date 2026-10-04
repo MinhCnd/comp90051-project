@@ -67,6 +67,12 @@ def get_auc(predictions: np.ndarray, labels: np.ndarray) -> float:
     auc = np.trapezoid(tpr, fpr)
     return auc
 
+def get_f1_precision_recall(predictions: np.ndarray, labels: np.ndarray) -> tuple[float, float, float]:
+    f1 = calculate_f1_score(predictions, labels)
+    precision = calculate_precision(predictions, labels)
+    recall = calculate_recall(predictions, labels)
+
+    return f1, precision, recall
 
 def calculate_brier_score(prediction_probs: np.ndarray, labels: np.ndarray) -> float:
     if prediction_probs.ndim != 1:
@@ -84,20 +90,12 @@ def calculate_recall(predictions: np.ndarray, labels: np.ndarray) -> float:
     if labels.ndim != 1 or labels.shape[0] != predictions.shape[0]:
         raise ValueError("labels must have shape (n,)")
 
-    TP = np.sum(predictions[(predictions == 1) & (labels == 1)])
-    FN = np.sum(predictions[(predictions == 0) & (labels == 1)])
+    tp = np.sum((predictions == 1) & (labels == 1))
+    fn = np.sum((predictions == 0) & (labels == 1))
 
 
-    return 0.0 if (TP + FN) == 0 else TP / (TP + FN)
+    return 0.0 if (tp + fn) == 0 else tp / (tp + fn)
 
-def calculate_auc(predictions: np.ndarray, labels: np.ndarray) -> float:
-
-
-    pass
-
-def calculate_f1_score(predictions: np.ndarray, labels: np.ndarray) -> float:
-
-    return 2 * (calculate_precision(predictions, labels) * calculate_recall(predictions, labels)) / (calculate_precision(predictions, labels) + calculate_recall(predictions, labels))
 
 def calculate_precision(predictions: np.ndarray, labels: np.ndarray) -> float:
     if predictions.ndim != 1:
@@ -105,11 +103,23 @@ def calculate_precision(predictions: np.ndarray, labels: np.ndarray) -> float:
     if labels.ndim != 1 or labels.shape[0] != predictions.shape[0]:
         raise ValueError("labels must have shape (n,)")
 
-    TP = np.sum(predictions[(predictions == 1) & (labels == 1)])
-    FP = np.sum(predictions[(predictions == 1) & (labels == 0)])
+    tp = np.sum((predictions == 1) & (labels == 1))
+    fp = np.sum((predictions == 1) & (labels == 0))
 
 
-    return 0.0 if (TP + FP) == 0 else TP / (TP + FP)
+    return 0.0 if (tp + fp) == 0 else tp / (tp + fp)
+
+def calculate_f1_score(predictions: np.ndarray, labels: np.ndarray) -> float:
+    if predictions.ndim != 1:
+        raise ValueError("predictions must have shape (n, 1)")
+    if labels.ndim != 1 or labels.shape[0] != predictions.shape[0]:
+        raise ValueError("labels must have shape (n,)")
+
+    precision = calculate_precision(predictions, labels)
+    recall = calculate_recall(predictions, labels)
+    if precision + recall == 0:
+        return 0.0
+    return 2 * (precision * recall) / (precision + recall)
 
 def calculate_accuracy(predictions: np.ndarray, labels: np.ndarray) -> float:
     if predictions.ndim != 1:
@@ -119,10 +129,10 @@ def calculate_accuracy(predictions: np.ndarray, labels: np.ndarray) -> float:
     if len(predictions) == 0:
         raise ValueError("predictions must not be empty")
 
-    TP = np.sum(predictions[(predictions == 1) & (labels == 1)])
-    TN = np.sum(predictions[(predictions == 0) & (labels == 0)])
+    tp = np.sum((predictions == 1) & (labels == 1))
+    tn = np.sum((predictions == 0) & (labels == 0))
 
-    return (TP + TN) / len(predictions)
+    return (tp + tn) / len(predictions)
 
 def calculate_error_rate(predictions: np.ndarray, labels: np.ndarray) -> float:
     if predictions.ndim != 1:
@@ -132,10 +142,10 @@ def calculate_error_rate(predictions: np.ndarray, labels: np.ndarray) -> float:
     if len(predictions) == 0:
         raise ValueError("predictions must not be empty")
 
-    FP = np.sum(predictions[(predictions == 1) & (labels == 0)])
-    FN = np.sum(predictions[(predictions == 0) & (labels == 1)])
+    fp = np.sum((predictions == 1) & (labels == 0))
+    fn = np.sum((predictions == 0) & (labels == 1))
 
-    return (FN + FP) / len(predictions)
+    return (fn + fp) / len(predictions)
 
 def calculate_specificity(predictions: np.ndarray, labels: np.ndarray) -> float:
     if predictions.ndim != 1:
@@ -143,10 +153,10 @@ def calculate_specificity(predictions: np.ndarray, labels: np.ndarray) -> float:
     if labels.ndim != 1 or labels.shape[0] != predictions.shape[0]:
         raise ValueError("labels must have shape (n,)")
 
-    TN = np.sum(predictions[(predictions == 0) & (labels == 0)])
-    FP = np.sum(predictions[(predictions == 1) & (labels == 0)])
+    tn = np.sum((predictions == 0) & (labels == 0))
+    fp = np.sum((predictions == 1) & (labels == 0))
 
 
-    return 0.0 if (TN + FP) == 0 else TN / (TN + FP)
+    return 0.0 if (tn + fp) == 0 else tn / (tn + fp)
 
 
