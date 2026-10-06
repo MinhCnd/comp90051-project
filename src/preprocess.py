@@ -141,6 +141,9 @@ def bureau_and_balance(folder_path: Path, num_rows=None, nan_as_category=False):
     bb, bb_cat = one_hot_encoder(bb, nan_as_category)
     bureau, bureau_cat = one_hot_encoder(bureau, nan_as_category)
 
+    # Flip negative values for MONTHS_BALANCE to make them positive
+    bb['MONTHS_BALANCE'] = -bb['MONTHS_BALANCE']
+
     bb_aggregations = {'MONTHS_BALANCE': ['min', 'max', 'size']}
     for col in bb_cat:
         bb_aggregations[col] = ['mean']
@@ -258,6 +261,9 @@ def pos_cash(folder_path: Path, num_rows = None, nan_as_category = False):
     pos = pd.read_csv(folder_path / 'POS_CASH_balance.csv', nrows = num_rows)
     pos, cat_cols = one_hot_encoder(pos, nan_as_category)
     # Features
+    # Flip negative values for MONTHS_BALANCE to make them positive
+    pos['MONTHS_BALANCE'] = -pos['MONTHS_BALANCE']
+
     aggregations = {
         'MONTHS_BALANCE': ['max', 'mean', 'size'],
         'SK_DPD': ['max', 'mean'],
@@ -319,6 +325,13 @@ def installments_payments(folder_path: Path, num_rows = None, nan_as_category = 
     ins_agg.columns = pd.Index(['INSTAL_' + e[0] + "_" + e[1].upper() for e in ins_agg.columns.tolist()])
     # Count installments accounts
     ins_agg['INSTAL_COUNT'] = ins.groupby('SK_ID_CURR').size()
+
+    # Add new flag if PAYMENT_DIFF aggs are negative
+    for postfix in ["MAX","MEAN","SUM"]:
+        col_name = f'INSTAL_PAYMENT_DIFF_SCALED_{postfix}'
+        flag_name = f'INSTAL_FLAG_NEG_PAYMENT_DIFF_SCALED_{postfix}'
+        ins_agg[flag_name] = ins_agg[col_name] < 0
+        ins_agg[col_name] = np.abs(ins_agg[col_name])
     del ins
     gc.collect()
 
