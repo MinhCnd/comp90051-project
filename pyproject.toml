@@ -17,7 +17,9 @@ dependencies = [
     "pytest==8.2.1",
     "mypy==2.4.0",
     "ruff>=0.11.10",
-    "isort==9.0.2"
+    "isort==9.0.2",
+    "featuretools==1.31.0",
+    "setuptools<81.0.0"
 ]
 
 [project.optional-dependencies]

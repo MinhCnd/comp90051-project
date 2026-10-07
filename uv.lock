@@ -527,6 +527,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "cvxopt" },
+    { name = "featuretools" },
     { name = "imbalanced-learn" },
     { name = "isort" },
     { name = "lightgbm" },
@@ -539,6 +540,7 @@ dependencies = [
     { name = "ruff" },
     { name = "scikit-learn" },
     { name = "seaborn" },
+    { name = "setuptools" },
 ]
 
 [package.optional-dependencies]
@@ -552,6 +554,7 @@ pytorch = [
 [package.metadata]
 requires-dist = [
     { name = "cvxopt", specifier = "==1.3.3" },
+    { name = "featuretools", specifier = "==1.31.0" },
     { name = "imbalanced-learn", specifier = "==0.14.2" },
     { name = "isort", specifier = "==9.0.2" },
     { name = "lightgbm", specifier = "==4.7.0" },
@@ -565,6 +568,7 @@ requires-dist = [
     { name = "ruff", specifier = ">=0.11.10" },
     { name = "scikit-learn", specifier = "==1.9.0" },
     { name = "seaborn", specifier = "==0.13.2" },
+    { name = "setuptools", specifier = "<81.0.0" },
     { name = "torch", marker = "extra == 'pytorch'", specifier = "==2.13.0" },
     { name = "torchvision", marker = "extra == 'pytorch'", specifier = "==0.28.0" },
     { name = "wandb", marker = "extra == 'pytorch'", specifier = "==0.30.0" },
@@ -782,6 +786,26 @@ wheels = [
 ]
 
 [[package]]
+name = "featuretools"
+version = "1.31.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cloudpickle" },
+    { name = "holidays" },
+    { name = "numpy" },
+    { name = "packaging" },
+    { name = "pandas" },
+    { name = "psutil" },
+    { name = "scipy" },
+    { name = "tqdm" },
+    { name = "woodwork" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/89/b1/7a9a401d2c52d9e42f609707fae58f7bed424262628f511f99684a0c2363/featuretools-1.31.0.tar.gz", hash = "sha256:01bfb17fcc1715b4c3623c7bc94a8982122c4a0fa03350ed478601bb81f90155", size = 382656, upload-time = "2024-05-14T19:00:02.793Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d4/8c/9e000dfc47b28f482ca7742e11b2f44071cc1981429fd88c922eb1172167/featuretools-1.31.0-py3-none-any.whl", hash = "sha256:87c94e9ae959c89acd83da96bd2583f3ef0f6daaa9639cbb6e46dbde2c742a18", size = 587925, upload-time = "2024-05-14T18:59:58.83Z" },
+]
+
+[[package]]
 name = "filelock"
 version = "4.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -917,6 +941,18 @@ wheels = [
 ]
 
 [[package]]
+name = "holidays"
+version = "0.106"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "python-dateutil" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a4/85/30fadb3b2014177299eea883bfd74d7e893d495fb4b37adc3f4968004d87/holidays-0.106.tar.gz", hash = "sha256:2e635a59102acb47e79a751c37fb04eff5ac77069a3b33d58cbfad66d243ffb3", size = 1048446, upload-time = "2026-10-05T19:23:13.417Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a0/f6/59f817df052a81e39bbc23cb10795cf721d14b36a4cf0d897bfe11648a22/holidays-0.106-py3-none-any.whl", hash = "sha256:4be3fb5be6a88a232e92f96825e4fab9b80710caabde90b7c476e57ba0ed9f5d", size = 1656690, upload-time = "2026-10-05T19:23:11.32Z" },
+]
+
+[[package]]
 name = "httpcore"
 version = "1.0.9"
 source = { registry = "https://pypi.org/simple" }
@@ -968,6 +1004,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/ad/35/d12fc1e8e2c2d8862104c4527641fe2d839324c50db0e6340dc73513faba/imbalanced_learn-0.14.2.tar.gz", hash = "sha256:f80ce7eafbcece8686e32571bd12978546c729c3f277215bead61a906ce9afe4", size = 19172446, upload-time = "2026-06-07T21:41:16.638Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/91/54/760ccac7d8feeea0c191767a6b025d3ca5014084443ff48afb6fb24ef056/imbalanced_learn-0.14.2-py3-none-any.whl", hash = "sha256:f9b81c47231aa1e3a71a1e4b3cc85b42e3b14f85e3a36922f3323c4da23605ef", size = 236073, upload-time = "2026-06-07T21:41:12.384Z" },
+]
+
+[[package]]
+name = "importlib-resources"
+version = "7.1.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e4/06/b56dfa750b44e86157093bc8fca0ab81dccbf5260510de4eaf1cb69b5b99/importlib_resources-7.1.0.tar.gz", hash = "sha256:0722d4c6212489c530f2a145a34c0a7a3b4721bc96a15fada5930e2a0b760708", size = 44985, upload-time = "2026-04-12T16:36:09.232Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8a/db/55a262f3606bebcae07cc14095338471ad7c0bbcaa37707e6f0ee49725b7/importlib_resources-7.1.0-py3-none-any.whl", hash = "sha256:1bd7b48b4088eddb2cd16382150bb515af0bd2c70128194392725f82ad2c96a1", size = 37232, upload-time = "2026-04-12T16:36:08.219Z" },
 ]
 
 [[package]]
@@ -3025,11 +3070,11 @@ wheels = [
 
 [[package]]
 name = "setuptools"
-version = "84.0.0"
+version = "80.10.2"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/6d/44/f5da03a8ef95d369145c5bb53050e7877c9f3d312e128605fd9504829143/setuptools-84.0.0.tar.gz", hash = "sha256:f4695c21257f0d9b537ec2692c941d02ee143b7cc1276941349a546573b2ef73", size = 1168449, upload-time = "2026-08-08T18:27:58.365Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/76/95/faf61eb8363f26aa7e1d762267a8d602a1b26d4f3a1e758e92cb3cb8b054/setuptools-80.10.2.tar.gz", hash = "sha256:8b0e9d10c784bf7d262c4e5ec5d4ec94127ce206e8738f29a437945fbc219b70", size = 1200343, upload-time = "2026-01-25T22:38:17.252Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/95/9c/c510029fc6ef33a6275cd2c5d3cecd6613dfd6aa401d57c54f1c18852ccf/setuptools-84.0.0-py3-none-any.whl", hash = "sha256:51a52592b3b99e102b609654876bd65f19f999935166d1352678931132b0c670", size = 818216, upload-time = "2026-08-08T18:27:56.719Z" },
+    { url = "https://files.pythonhosted.org/packages/94/b8/f1f62a5e3c0ad2ff1d189590bfa4c46b4f3b6e49cef6f26c6ee4e575394d/setuptools-80.10.2-py3-none-any.whl", hash = "sha256:95b30ddfb717250edb492926c92b5221f7ef3fbcc2b07579bcd4a27da21d0173", size = 1064234, upload-time = "2026-01-25T22:38:15.216Z" },
 ]
 
 [[package]]
@@ -3350,6 +3395,23 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/d8/cb/a5abcc2891249f393827c650c6296660ce40374ac22d99ab9aea41f9d2a2/websocket_client-1.9.2.tar.gz", hash = "sha256:0fcb57545848be86992e128218fd96dd87a6769ffdb1a968dff79632b85604d0", size = 84110, upload-time = "2026-08-31T14:08:40.964Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d5/d2/cc4dc1271e464942db7ee278baae2daa99ee77cb2af744025c04da585a3e/websocket_client-1.9.2-py3-none-any.whl", hash = "sha256:e1a673830a9c7bfa47b1cd3d5e4178f4c9651d80a4eab02c9c23a1c3ec6250ce", size = 95786, upload-time = "2026-08-31T14:08:39.899Z" },
+]
+
+[[package]]
+name = "woodwork"
+version = "0.31.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "importlib-resources" },
+    { name = "numpy" },
+    { name = "pandas" },
+    { name = "python-dateutil" },
+    { name = "scikit-learn" },
+    { name = "scipy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/27/8d/49a9350004be051057561e8f0bd14c40e5fbc61e1f5d7261d3415d54cd19/woodwork-0.31.0.tar.gz", hash = "sha256:6ef82af1d5b6525b02efe6417c574c810cfdcc606cb266bd0d7fb17a1d066b67", size = 178531, upload-time = "2024-05-14T16:38:14.629Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/49/a2/bf83836640086a518c6b0c361765aaaf37b57e127844dd57f6c7e9e11153/woodwork-0.31.0-py3-none-any.whl", hash = "sha256:5cb3370553b5f466f8c8599b1bf559584dc0b798cc1f2da26bbd7029d256c6f9", size = 215208, upload-time = "2024-05-14T16:38:11.073Z" },
 ]
 
 [[package]]

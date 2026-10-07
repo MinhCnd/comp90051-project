@@ -7,7 +7,7 @@ def get_ece(predictions: np.ndarray, labels: np.ndarray, num_bins=10) -> float:
     Reference: https://arxiv.org/html/2501.19047v2
     
     Args:
-        predictions (np.ndarray): Array of shape (n, 2) with predicted probabilities and predicted labels.
+        predictions (np.ndarray): Array of shape (n, 2) with max predicted probabilities and predicted labels.
         labels (np.ndarray): Array of true binary labels (0 or 1).
         num_bins (int, optional): Number of bins to use for calibration. Defaults to 10.
 
@@ -36,35 +36,48 @@ def get_ece(predictions: np.ndarray, labels: np.ndarray, num_bins=10) -> float:
     return ece
 
 
-def get_auc(predictions: np.ndarray, labels: np.ndarray) -> float:
+def get_roc_auc(predictions: np.ndarray, labels: np.ndarray) -> float:
     """Calculate Area under the ROC curve (AUC) for binary classification predictions.
     
     Args:
-        predictions (np.ndarray): Array of shape (n, 2) with predicted probabilities and predicted labels.
+        predictions (np.ndarray): Array of shape (n, 2) with predicted probabilities(for the positive class) and predicted labels.
         labels (np.ndarray): Array of true binary labels (0 or 1).
 
     Returns:
         float: Area under the ROC curve (AUC).
     """
-    pred_probs = predictions[:, 0]
-    pred_labels = predictions[:, 1]
+    y_prob = predictions[:, 0]
+    y_preds = predictions[:, 1]
 
-    # Sort by predicted probabilities in descending order
-    desc_order = np.argsort(-pred_probs)
-    pred_probs = pred_probs[desc_order]
-    pred_labels = pred_labels[desc_order]
-    labels = labels[desc_order]
+    # Sort samples by predicted probabilities in descending order
+    desc_indx = np.argsort(-y_prob)
+    y_prob_sorted = y_prob[desc_indx]
+    labels_sorted = labels[desc_indx]
 
-    # Calculate true positive and false positive rates
-    tpr = np.cumsum(pred_labels == labels) / np.sum(labels == 1)
-    fpr = np.cumsum(pred_labels != labels) / np.sum(labels == 0)
+    # Identify indices corresponding to distinct prob threshold
+    distinct_value_indices = np.where(np.diff(y_prob_sorted) != 0)[0]
+    threshold_indxs = np.r_[distinct_value_indices, y_prob_sorted.size - 1]
 
-    # Append (0,0) at the beginning
-    tpr = np.concatenate([[0], tpr])
-    fpr = np.concatenate([[0], fpr])
+    # Calculate cumulative TP and FP at unique thresholds
+    tps = np.cumsum(labels_sorted == 1)[threshold_indxs]
+    fps = np.cumsum(labels_sorted == 0)[threshold_indxs]
+
+    # Prepend origin
+    tps = np.r_[0, tps]
+    fps = np.r_[0, fps]
+
+    # Normalize to get TPR and FPR
+    n_pos = np.sum(labels == 1)
+    n_neg = np.sum(labels == 0)
+
+    if n_pos == 0 or n_neg == 0:
+        return 0.5
+
+    tpr = tps / n_pos
+    fpr = fps / n_neg
 
     # Calculate AUC using the trapezoidal rule
-    auc = np.trapezoid(tpr, fpr)
+    auc = float(np.trapezoid(tpr, fpr))
     return auc
 
 def get_f1_precision_recall(predictions: np.ndarray, labels: np.ndarray) -> tuple[float, float, float]:
