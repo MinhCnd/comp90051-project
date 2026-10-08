@@ -4,46 +4,25 @@ import os
 
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import ParameterGrid
 import torch
 from pytorch_tabular import TabularModel
-from pytorch_tabular.config import DataConfig, ExperimentConfig, OptimizerConfig, TrainerConfig
-from pytorch_tabular.models import FTTransformerConfig
+from pytorch_tabular.config import DataConfig, ExperimentConfig, OptimizerConfig, TrainerConfig, ModelConfig
+from pytorch_tabular.models import FTTransformerConfig, CategoryEmbeddingModelConfig
 
 from src.metrics import get_roc_auc, get_ece, get_f1_precision_recall
 from src.pipeline import (get_continuous_categorical_columns,
-                          stratified_k_fold_split, subsample_to_ratio)
+                          stratified_k_fold_split, subsample_to_ratio, generate_parameters)
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
-def train_eval_ft_transformer(train_df: pd.DataFrame, 
-                              val_df: pd.DataFrame,
-                              continuous_cols: list[str],
-                              categorical_cols: list[str],
-                              target_col: str,
-                              hparams: dict) -> np.ndarray:
-    """
-    Train and evaluate the FTTransformer model.
-
-    Args:
-        train_df (pd.DataFrame): Training dataframe as a Pandas DataFrame.
-        val_df (pd.DataFrame): Validation dataframe as a Pandas DataFrame.
-        continuous_cols (list[str]): List of continuous column names.
-        categorical_cols (list[str]): List of categorical column names.
-        target_col (str): Name of the target column.
-        hparams (dict): Hyperparameters for the FTTransformer model.
-
-    Returns:
-        np.ndarray: Prediction probabilities for both classes and labels for the validation set.
-    """
-
+def get_model(target_col: str, continuous_cols: list[str], categorical_cols: list[str], model_config: ModelConfig) -> TabularModel:
     data_config = DataConfig(target=[target_col],
-                             continuous_cols=continuous_cols,
-                             categorical_cols=categorical_cols,
-                             num_workers=7,
-                             dataloader_kwargs={"persistent_workers": True})
-
+        continuous_cols=continuous_cols,
+        categorical_cols=categorical_cols,
+        num_workers=7,
+        dataloader_kwargs={"persistent_workers": True})
+    
     trainer_config = TrainerConfig(
         batch_size = 256,
         max_epochs = 12,
@@ -54,7 +33,7 @@ def train_eval_ft_transformer(train_df: pd.DataFrame,
 
     experiment_config = ExperimentConfig(
         project_name="CreditDefault",
-        run_name="FT-Transformer",
+        run_name=model_config._model_name,
         log_target="tensorboard",
     )
 
@@ -62,17 +41,9 @@ def train_eval_ft_transformer(train_df: pd.DataFrame,
         optimizer="AdamW"
     )
 
-    # Weight target class (1) higher than non-target class (0)
-    # custom_loss = None
-    weights_tensor = torch.tensor([1.0, 2.0])
-    custom_loss = torch.nn.CrossEntropyLoss(weight=weights_tensor)
-
+    # Other hyperparams will be loaded during training
     model_config = FTTransformerConfig(
-        task="classification",
-        learning_rate=hparams.get("learning_rate", 1e-3),
-        input_embed_dim=hparams.get("input_embed_dim", 32),
-        num_heads=hparams.get("num_heads", 4),
-        num_attn_blocks=hparams.get("num_attn_blocks", 2)
+        task="classification"
     )
 
     tabular_model = TabularModel(
@@ -82,10 +53,31 @@ def train_eval_ft_transformer(train_df: pd.DataFrame,
         optimizer_config=optimizer_config,
         experiment_config=experiment_config,
     )
+    return tabular_model
 
-    tabular_model.fit(train_df, validation=val_df, loss=custom_loss)
+def train_eval(train_df: pd.DataFrame, 
+                val_df: pd.DataFrame,
+                model: TabularModel) -> np.ndarray:
+    """
+    Train and evaluate the FTTransformer model.
 
-    preds = tabular_model.predict(val_df)
+    Args:
+        train_df (pd.DataFrame): Training dataframe as a Pandas DataFrame.
+        val_df (pd.DataFrame): Validation dataframe as a Pandas DataFrame.
+        model (TabularModel): The PyTorch Tabular model to be trained and evaluated.
+
+    Returns:
+        np.ndarray: Prediction probabilities for both classes and labels for the validation set.
+    """
+
+    # Weight target class (1) higher than non-target class (0)
+    # custom_loss = None
+    weights_tensor = torch.tensor([1.0, 2.0])
+    custom_loss = torch.nn.CrossEntropyLoss(weight=weights_tensor)
+
+    model.fit(train_df, validation=val_df, loss=custom_loss)
+
+    preds = model.predict(val_df)
     if 'TARGET_1_probability' not in preds.columns or 'TARGET_prediction' not in preds.columns or 'TARGET_0_probability' not in preds.columns:
         raise ValueError("Expected columns 'TARGET_0_probability', 'TARGET_1_probability' and 'TARGET_prediction' not found in predictions.")
 
@@ -93,15 +85,17 @@ def train_eval_ft_transformer(train_df: pd.DataFrame,
     res.columns = ['TARGET_0_probability', 'TARGET_1_probability', 'predicted_label']
     return res.to_numpy()
 
-def run_nested_cv_ft_transformer(df: pd.DataFrame, 
-                                 target_col: str, 
-                                 continuous_cols: list[str], 
-                                 categorical_cols: list[str], 
-                                 target_ratio=0.08, 
-                                 outer_k=10, 
-                                 inner_k=10, 
-                                 param_grid: list[dict] | None = None,
-                                 debug: bool = False):
+def run_nested_cv(df: pd.DataFrame, 
+    target_col: str, 
+    continuous_cols: list[str], 
+    categorical_cols: list[str], 
+    model_config: ModelConfig,
+    target_ratio=0.08, 
+    outer_k=10, 
+    inner_k=10, 
+    param_grid: list[dict] | None = None,
+    debug: bool = False,
+    save_path: str | None = None):
     """
     Run nested cross-validation for the FTTransformer model.
 
@@ -110,24 +104,19 @@ def run_nested_cv_ft_transformer(df: pd.DataFrame,
         target_col (str): Name of the target column.
         continuous_cols (list[str]): List of continuous column names.
         categorical_cols (list[str]): List of categorical column names.
+        model_config (ModelConfig): Configuration for the PyTorch Tabular model.
         target_ratio (float, optional): Desired ratio of the positive class. Defaults to 0.08.
         outer_k (int, optional): Number of outer folds. Defaults to 10.
         inner_k (int, optional): Number of inner folds. Defaults to 10.
         param_grid (list[dict], optional): Hyperparameter grid for inner cross-validation. Defaults to None.
         debug (bool, optional): Whether to enable debug mode. Defaults to False.
+        save_path (str | None, optional): Path to save the trained model for each outer fold. Defaults to None.
 
     Returns:
         dict: Dictionary containing the results of the nested cross-validation.
     """
 
-    if param_grid is None:
-        param_grid = {
-            "learning_rate": [1e-2, 1e-3, 1e-4],
-            "input_embed_dim": [32, 64, 128],
-            "num_heads": [4, 8, 16]
-        }
-
-    param_grid = list(ParameterGrid(param_grid))
+    param_grid = generate_parameters(param_grid)
 
     if debug:
         param_grid = param_grid[:1]  # Use only the first set of parameters in debug mode
@@ -144,6 +133,8 @@ def run_nested_cv_ft_transformer(df: pd.DataFrame,
     outer_folds = stratified_k_fold_split(y_all, k=outer_k, seed=23)
 
     logger.info(f"Starting Nested Stratified K-Fold Cross-Validation ({outer_k} outer folds, {inner_k} inner folds)")
+
+    model = get_model(target_col, continuous_cols, categorical_cols, model_config)
 
     for outer_fold_idx, (train_idx, test_idx) in enumerate(outer_folds):
         logger.info(f"Starting outer fold {outer_fold_idx + 1}/{outer_k}")
@@ -162,19 +153,25 @@ def run_nested_cv_ft_transformer(df: pd.DataFrame,
             inner_val_eces = []
             inner_val_aucs = []
 
+            # Update model config with hyperparameters programmatically
+            for key, value in params.items():
+                if hasattr(model.config, key):
+                    setattr(model.config, key, value)
+                else:
+                    logger.warning(f"Unknown model config hyperparameter '{key}' ignored.")
+
+            fold_idx = 0
             for inner_train_idx, inner_val_idx in inner_folds:
+                fold_idx += 1
                 X_inner_train, X_inner_val = X_outer_train.iloc[inner_train_idx], X_outer_train.iloc[inner_val_idx]
                 y_inner_val = y_outer_train[inner_val_idx]
 
                 X_inner_train_shifted = subsample_to_ratio(X_inner_train, target_col, target_ratio)
 
-                val_probs = train_eval_ft_transformer(
+                val_probs = train_eval(
                     train_df=X_inner_train_shifted,
                     val_df=X_inner_val,
-                    continuous_cols=continuous_cols,
-                    categorical_cols=categorical_cols,
-                    target_col=target_col,
-                    hparams=params
+                    model=model
                 )
 
                 #max pred and label
@@ -194,25 +191,42 @@ def run_nested_cv_ft_transformer(df: pd.DataFrame,
                 inner_val_eces.append(val_ece)
                 inner_val_aucs.append(val_auc)
 
+            file_name = f"{save_path}/train_results.csv"
+            for idx in range(len(inner_folds)):
+                pd.DataFrame({
+                    "outer_fold_idx": [outer_fold_idx + 1],
+                    "inner_fold_idx": [idx + 1],
+                    "param_idx": [p_idx + 1],
+                    "fold": [idx + 1],
+                    "f1": [inner_val_f1s[idx]],
+                    "precision": [inner_val_precisions[idx]],
+                    "recall": [inner_val_recalls[idx]],
+                    "ece": [inner_val_eces[idx]],
+                    "auc": [inner_val_aucs[idx]]
+                }).to_csv(file_name, mode="a", header=not os.path.exists(file_name), index=False)
+
+            # Log the mean inner fold metrics for the current parameter candidate
             mean_inner_auc = np.mean(inner_val_aucs)
             logger.debug(f" Param Candidate {p_idx + 1} ({params}): Mean Inner AUC = {mean_inner_auc:.4f}")
             if mean_inner_auc > best_inner_score:
                 best_inner_score = mean_inner_auc
                 best_params = params
+                # Save the best model for current outer fold
+                if save_path is not None:
+                    model.save_model(f"{save_path}/best_model_fold_{outer_fold_idx + 1}")
+                    logger.info(f"Saved best model of inner fold {outer_fold_idx + 1} to {save_path}")
 
+        
         logger.info(f"  Best params for inner fold {outer_fold_idx + 1}/{outer_k}: {best_params} with score {best_inner_score}")
 
         # Outer Evaluation: Final Training & testing
         # Shift the outer training set to match the target ratio
         X_outer_train_shifted = subsample_to_ratio(X_outer_train, target_col, target_ratio)
 
-        outer_val_probs = train_eval_ft_transformer(
+        outer_val_probs = train_eval(
             train_df=X_outer_train_shifted,
             val_df=X_outer_test,
-            continuous_cols=continuous_cols,
-            categorical_cols=categorical_cols,
-            target_col=target_col,
-            hparams=best_params
+            model=model
         )
 
         outer_val_auc = get_roc_auc(outer_val_probs, y_outer_test)
@@ -226,7 +240,7 @@ def run_nested_cv_ft_transformer(df: pd.DataFrame,
         outer_auc_scores.append(outer_val_auc)
 
         # Append these results to a csv
-        file_name = "./temp/ft_transformer_test_results.csv"
+        file_name = f"{save_path}/test_results.csv"
         pd.DataFrame({
             "param_idx": [p_idx + 1],
             "fold": [outer_fold_idx + 1],
@@ -234,8 +248,7 @@ def run_nested_cv_ft_transformer(df: pd.DataFrame,
             "precision": [outer_precision],
             "recall": [outer_recall],
             "ece": [outer_ece],
-            "auc": [outer_val_auc],
-            "hparams": [best_params]
+            "auc": [outer_val_auc]
         }).to_csv(file_name, mode="a", header=not os.path.exists(file_name), index=False)
 
     # Final Mean & Std.dev across outer folds
@@ -257,15 +270,6 @@ def run_nested_cv_ft_transformer(df: pd.DataFrame,
     logger.info(f"Mean Outer ECE = {mean_outer_ece}, Std.dev = {std_outer_ece}")
     logger.info(f"Mean Outer AUC = {mean_outer_auc}, Std.dev = {std_outer_auc}")
 
-    pd.DataFrame({
-        "fold": list(range(1, len(outer_auc_scores) + 1)),
-        "f1": outer_f1_scores,
-        "precision": outer_precision_scores,
-        "recall": outer_recall_scores,
-        "ece": outer_ece_scores,
-        "auc": outer_auc_scores,
-    }).to_csv("./temp/ft_transformer_fold_results_final.csv", index=False)
-
     return {
         "f1_mean": mean_outer_f1,
         "f1_std": std_outer_f1,
@@ -285,34 +289,52 @@ if __name__ == "__main__":
     arg_parser = argparse.ArgumentParser()
     arg_parser.add_argument("-d", "--debug", action="store_true", help="Enable debug mode")
     args = arg_parser.parse_args()
-    df = pd.read_csv("./temp/subsampled_data_1_1.csv")
+    df = pd.read_csv("./temp/processed_data_1_3.csv")
 
     debug = args.debug
 
     if debug:
-        df = subsample_to_ratio(df, target_col="TARGET", target_ratio=0.30, max_samples=10000, seed=50)
+        df = subsample_to_ratio(df, target_col="TARGET", target_ratio=0.20, max_samples=100, seed=50)
 
     # df = df.sample(frac=0.12, random_state=50)
+
+    model_name = "ft_transformer"
 
     cont_cols, cat_cols = get_continuous_categorical_columns()
 
     #For TF-transformer, since cat_cols has been one-hot encoded, we don't need to pass them as categorical features.
-    cont_cols = cont_cols + cat_cols
+    # cont_cols = cont_cols + cat_cols
+
+    param_grid = None
+    model_config = None
 
     param_grid = {
-                "learning_rate": [9e-4, 8e-5, 7e-6],
-                "input_embed_dim": [32, 64, 128],
-                "num_heads": [8, 16, 32]
+                "num_attn_blocks": [1, 2, 4]
             }
 
-    res = run_nested_cv_ft_transformer(
+    model_config = FTTransformerConfig(
+        task="classification",
+        learning_rate=9e-4,
+        input_embed_dim=32,
+        num_heads=8,
+        num_attn_blocks=2
+    )
+
+    logger.info(f"Running nested CV with model: {model_name}")
+
+    model_save_path = "./output"
+    os.makedirs(model_save_path, exist_ok=True)
+
+    res = run_nested_cv(
         df=df,
         target_col="TARGET",
         continuous_cols=cont_cols,
-        categorical_cols=[],
+        categorical_cols=cat_cols,
         target_ratio=0.30,
         outer_k=10,
         inner_k=5,
         param_grid=param_grid,
-        debug=debug
+        debug=debug,
+        model_config=model_config,
+        save_path=model_save_path
     )

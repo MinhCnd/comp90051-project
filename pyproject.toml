@@ -19,7 +19,7 @@ dependencies = [
     "ruff>=0.11.10",
     "isort==9.0.2",
     "featuretools==1.31.0",
-    "setuptools<81.0.0"
+    "setuptools<81.0.0",
 ]
 
 [project.optional-dependencies]
@@ -27,5 +27,6 @@ pytorch = [
     "torch==2.13.0",
     "torchvision==0.28.0",
     "pytorch-tabular==1.2.0",
-    "wandb==0.30.0"
+    "wandb==0.30.0",
+    "tensorboard==2.21.0"
 ]

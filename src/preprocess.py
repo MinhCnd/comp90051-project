@@ -330,7 +330,7 @@ def installments_payments(folder_path: Path, num_rows = None, nan_as_category = 
     for postfix in ["MAX","MEAN","SUM"]:
         col_name = f'INSTAL_PAYMENT_DIFF_SCALED_{postfix}'
         flag_name = f'INSTAL_FLAG_NEG_PAYMENT_DIFF_SCALED_{postfix}'
-        ins_agg[flag_name] = ins_agg[col_name] < 0
+        ins_agg[flag_name] = (ins_agg[col_name] < 0).astype(int)
         ins_agg[col_name] = np.abs(ins_agg[col_name])
     del ins
     gc.collect()
@@ -404,7 +404,7 @@ def preprocess(folder_path: Path, num_rows=None, debug=False, drop_col_thres: fl
     logger.info(f"df before dropping columns: {df.shape}")
     missing_ratio = df.isnull().mean()
     cols_to_drop = missing_ratio[missing_ratio > drop_col_thres].index.tolist()
-    cols_to_drop = [col for col in cols_to_drop if col != 'TARGET']
+    cols_to_drop = [col for col in cols_to_drop if col != 'TARGET' or not col.startswith('EXT_SOURCE')]
 
     logger.info(f"Dropping {len(cols_to_drop)} columns with more than {drop_col_thres:.0%} missing values")
     df = df.drop(columns=cols_to_drop)

@@ -1,8 +1,9 @@
 import numpy as np
 import pandas as pd
 import pytest
+from typing import Generator
 
-from src.pipeline import stratified_k_fold_split, subsample_to_ratio
+from src.pipeline import generate_parameters, stratified_k_fold_split, subsample_to_ratio
 
 TARGET_LABEL = "TARGET"
 
@@ -119,3 +120,40 @@ def test_subsample_to_ratio_raises_when_not_enough_negatives():
     df = _make_df(10, 20)
     with pytest.raises(ValueError):
         subsample_to_ratio(df, TARGET_LABEL, 0.1, seed=0)
+
+
+# ---------------------------------------------------------------------------
+# Tests for generate_parameters (run with: pytest src/pipeline.py)
+# ---------------------------------------------------------------------------
+
+def test_generate_parameters_single_param():
+    result = list(generate_parameters({"a": [1, 2, 3]}))
+    assert result == [{"a": 1}, {"a": 2}, {"a": 3}]
+
+
+def test_generate_parameters_multiple_params_count_and_content():
+    grid = {"a": [1, 2], "b": ["x", "y", "z"]}
+    result = list(generate_parameters(grid))
+    assert len(result) == 6
+    assert all(set(p.keys()) == {"a", "b"} for p in result)
+    assert {(p["a"], p["b"]) for p in result} == {(a, b) for a in [1, 2] for b in ["x", "y", "z"]}
+
+
+def test_generate_parameters_unique_combinations():
+    result = list(generate_parameters({"a": [1, 2], "b": [3, 4]}))
+    assert len({tuple(sorted(p.items())) for p in result}) == len(result)
+
+
+def test_generate_parameters_deterministic_sorted_key_order():
+    grid1 = {"b": [1, 2], "a": [3, 4]}
+    grid2 = {"a": [3, 4], "b": [1, 2]}
+    assert list(generate_parameters(grid1)) == list(generate_parameters(grid2))
+    assert list(generate_parameters(grid1))[0] == {"a": 3, "b": 1}
+
+
+def test_generate_parameters_empty_grid():
+    assert list(generate_parameters({})) == [{}]
+
+
+def test_generate_parameters_empty_value_list():
+    assert list(generate_parameters({"a": [], "b": [1]})) == []
