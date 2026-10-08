@@ -81,6 +81,15 @@ def get_roc_auc(predictions: np.ndarray, labels: np.ndarray) -> float:
     return auc
 
 def get_f1_precision_recall(predictions: np.ndarray, labels: np.ndarray) -> tuple[float, float, float]:
+    """Calculate F1 score, precision, and recall for the predictions.
+
+    Args:
+        predictions (np.ndarray): Array of predicted labels (0 or 1).
+        labels (np.ndarray): Array of true labels (0 or 1).
+
+    Returns:
+        tuple[float, float, float]: F1 score, precision, and recall.
+    """
     f1 = calculate_f1_score(predictions, labels)
     precision = calculate_precision(predictions, labels)
     recall = calculate_recall(predictions, labels)
@@ -111,6 +120,15 @@ def calculate_recall(predictions: np.ndarray, labels: np.ndarray) -> float:
 
 
 def calculate_precision(predictions: np.ndarray, labels: np.ndarray) -> float:
+    """Calculate the precision of the predictions.
+
+    Args:
+        predictions (np.ndarray): Array of predicted labels (0 or 1).
+        labels (np.ndarray): Array of true labels (0 or 1).
+
+    Returns:
+        float: Precision score.
+    """
     if predictions.ndim != 1:
         raise ValueError("predictions must have shape (n, 1)")
     if labels.ndim != 1 or labels.shape[0] != predictions.shape[0]:
@@ -123,6 +141,15 @@ def calculate_precision(predictions: np.ndarray, labels: np.ndarray) -> float:
     return 0.0 if (tp + fp) == 0 else tp / (tp + fp)
 
 def calculate_f1_score(predictions: np.ndarray, labels: np.ndarray) -> float:
+    """Calculate the F1 score of the predictions.
+
+    Args:
+        predictions (np.ndarray): Array of predicted labels (0 or 1).
+        labels (np.ndarray): Array of true labels (0 or 1).
+
+    Returns:
+        float: F1 score.
+    """
     if predictions.ndim != 1:
         raise ValueError("predictions must have shape (n, 1)")
     if labels.ndim != 1 or labels.shape[0] != predictions.shape[0]:
@@ -135,6 +162,15 @@ def calculate_f1_score(predictions: np.ndarray, labels: np.ndarray) -> float:
     return 2 * (precision * recall) / (precision + recall)
 
 def calculate_accuracy(predictions: np.ndarray, labels: np.ndarray) -> float:
+    """Calculate the accuracy of the predictions.
+
+    Args:
+        predictions (np.ndarray): Array of predicted labels (0 or 1).
+        labels (np.ndarray): Array of true labels (0 or 1).
+
+    Returns:
+        float: Accuracy score.
+    """
     if predictions.ndim != 1:
         raise ValueError("predictions must have shape (n, 1)")
     if labels.ndim != 1 or labels.shape[0] != predictions.shape[0]:
@@ -148,6 +184,15 @@ def calculate_accuracy(predictions: np.ndarray, labels: np.ndarray) -> float:
     return (tp + tn) / len(predictions)
 
 def calculate_error_rate(predictions: np.ndarray, labels: np.ndarray) -> float:
+    """Calculate the error rate of the predictions.
+
+    Args:
+        predictions (np.ndarray): Array of predicted labels (0 or 1).
+        labels (np.ndarray): Array of true labels (0 or 1).
+
+    Returns:
+        float: Error rate.
+    """
     if predictions.ndim != 1:
         raise ValueError("predictions must have shape (n, 1)")
     if labels.ndim != 1 or labels.shape[0] != predictions.shape[0]:
@@ -161,6 +206,15 @@ def calculate_error_rate(predictions: np.ndarray, labels: np.ndarray) -> float:
     return (fn + fp) / len(predictions)
 
 def calculate_specificity(predictions: np.ndarray, labels: np.ndarray) -> float:
+    """Calculate the specificity of the predictions.
+
+    Args:
+        predictions (np.ndarray): Array of predicted labels (0 or 1).
+        labels (np.ndarray): Array of true labels (0 or 1).
+
+    Returns:
+        float: Specificity score.
+    """
     if predictions.ndim != 1:
         raise ValueError("predictions must have shape (n, 1)")
     if labels.ndim != 1 or labels.shape[0] != predictions.shape[0]:
@@ -173,3 +227,33 @@ def calculate_specificity(predictions: np.ndarray, labels: np.ndarray) -> float:
     return 0.0 if (tn + fp) == 0 else tn / (tn + fp)
 
 
+def get_metrics(predictions: np.ndarray, labels: np.ndarray) -> dict:
+    """ Calculate a set of eval metrics for the given predictions and labels.
+
+    Args:
+        predictions (np.ndarray): Array of shape (n, 3) where the first column is the probability of class 0, the second column is the probability of class 1, and the third column is the predicted label (0 or 1).
+        labels (np.ndarray): Array of true labels (0 or 1).
+
+    Returns:
+        dict: Dictionary containing accuracy, error rate, specificity, precision, recall, F1 score, ECE and ROC AUC.
+    """
+
+    p0 = predictions[:, 0]
+    p1 = predictions[:, 1]
+    pred_labels = predictions[:, 2]
+    max_probs = np.maximum(p0, p1)
+    max_probs = np.concatenate([max_probs[:, None], pred_labels[:, None]], axis=1)
+    p1_labels = np.concatenate([p1[:, None], pred_labels[:, None]], axis=1)
+    auc = get_roc_auc(p1_labels, labels)
+    f1, precision, recall = get_f1_precision_recall(pred_labels, labels)
+    ece = get_ece(max_probs, labels)
+    return {
+        "accuracy": calculate_accuracy(pred_labels, labels),
+        "error_rate": calculate_error_rate(pred_labels, labels),
+        "specificity": calculate_specificity(pred_labels, labels),
+        "precision": precision,
+        "recall": recall,
+        "f1": f1,
+        "ece": ece,
+        "auc": auc
+    }

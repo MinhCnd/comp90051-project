@@ -1,21 +1,48 @@
 import argparse
-import logging
+import functools
+import time
 import os
-
+import logging
+import pandas as pd
+import numpy as np
+import torch
+from typing import Optional
 import numpy as np
 import pandas as pd
 import torch
 from pytorch_tabular import TabularModel
 from pytorch_tabular.config import DataConfig, ExperimentConfig, OptimizerConfig, TrainerConfig, ModelConfig
-from pytorch_tabular.models import FTTransformerConfig, CategoryEmbeddingModelConfig
+from pytorch_tabular.models import FTTransformerConfig
 
-from src.metrics import get_roc_auc, get_ece, get_f1_precision_recall
+from src.metrics import get_roc_auc, get_ece, get_f1_precision_recall, get_metrics
 from src.pipeline import (get_continuous_categorical_columns,
                           stratified_k_fold_split, subsample_to_ratio, generate_parameters)
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
+def timer(func):
+    """Decorator that logs the execution time of the wrapped function."""
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        start = time.perf_counter()
+        try:
+            return func(*args, **kwargs)
+        finally:
+            elapsed = time.perf_counter() - start
+            logger.info("%s took %.4f seconds", func.__name__, elapsed)
+    return wrapper
+
+def update_model_config(model: TabularModel, params: dict) -> TabularModel:
+    model_config = model.config
+    for key, value in params.items():
+        if hasattr(model_config, key):
+            setattr(model_config, key, value)
+        else:
+            logger.warning(f"Unknown model config hyperparameter '{key}' ignored.")
+    return model
+
+@timer
 def get_model(target_col: str, continuous_cols: list[str], categorical_cols: list[str], model_config: ModelConfig) -> TabularModel:
     data_config = DataConfig(target=[target_col],
         continuous_cols=continuous_cols,
@@ -41,11 +68,6 @@ def get_model(target_col: str, continuous_cols: list[str], categorical_cols: lis
         optimizer="AdamW"
     )
 
-    # Other hyperparams will be loaded during training
-    model_config = FTTransformerConfig(
-        task="classification"
-    )
-
     tabular_model = TabularModel(
         data_config=data_config,
         model_config=model_config,
@@ -57,7 +79,8 @@ def get_model(target_col: str, continuous_cols: list[str], categorical_cols: lis
 
 def train_eval(train_df: pd.DataFrame, 
                 val_df: pd.DataFrame,
-                model: TabularModel) -> np.ndarray:
+                model: TabularModel,
+                params: Optional[dict] = None) -> np.ndarray:
     """
     Train and evaluate the FTTransformer model.
 
@@ -65,15 +88,18 @@ def train_eval(train_df: pd.DataFrame,
         train_df (pd.DataFrame): Training dataframe as a Pandas DataFrame.
         val_df (pd.DataFrame): Validation dataframe as a Pandas DataFrame.
         model (TabularModel): The PyTorch Tabular model to be trained and evaluated.
+        params (Optional[dict], optional): Additional parameters for training. Defaults to None.
 
     Returns:
         np.ndarray: Prediction probabilities for both classes and labels for the validation set.
     """
 
-    # Weight target class (1) higher than non-target class (0)
-    # custom_loss = None
-    weights_tensor = torch.tensor([1.0, 2.0])
+    weights_tensor = torch.tensor([1.0, 1.0])
     custom_loss = torch.nn.CrossEntropyLoss(weight=weights_tensor)
+    if params is not None and "custom_loss" in params:
+        weights_tensor = torch.tensor(params["custom_loss"])
+        custom_loss = torch.nn.CrossEntropyLoss(weight=weights_tensor)
+        logger.info("Using custom loss with weights: %s", params["custom_loss"])
 
     model.fit(train_df, validation=val_df, loss=custom_loss)
 
@@ -127,13 +153,13 @@ def run_nested_cv(df: pd.DataFrame,
     outer_precision_scores = []
     outer_recall_scores = []
     outer_auc_scores = []
+    outer_accuracy_scores = []
     outer_ece_scores = []
 
     y_all = df[target_col].values
     outer_folds = stratified_k_fold_split(y_all, k=outer_k, seed=23)
 
     logger.info(f"Starting Nested Stratified K-Fold Cross-Validation ({outer_k} outer folds, {inner_k} inner folds)")
-
     model = get_model(target_col, continuous_cols, categorical_cols, model_config)
 
     for outer_fold_idx, (train_idx, test_idx) in enumerate(outer_folds):
@@ -150,15 +176,10 @@ def run_nested_cv(df: pd.DataFrame,
             inner_val_f1s = []
             inner_val_precisions = []
             inner_val_recalls = []
+            inner_val_accuracies = []
             inner_val_eces = []
             inner_val_aucs = []
-
-            # Update model config with hyperparameters programmatically
-            for key, value in params.items():
-                if hasattr(model.config, key):
-                    setattr(model.config, key, value)
-                else:
-                    logger.warning(f"Unknown model config hyperparameter '{key}' ignored.")
+            inner_val_accuracies = []
 
             fold_idx = 0
             for inner_train_idx, inner_val_idx in inner_folds:
@@ -168,28 +189,24 @@ def run_nested_cv(df: pd.DataFrame,
 
                 X_inner_train_shifted = subsample_to_ratio(X_inner_train, target_col, target_ratio)
 
+                model = get_model(target_col, continuous_cols, categorical_cols, model_config)
+                model = update_model_config(model, params)
+
                 val_probs = train_eval(
                     train_df=X_inner_train_shifted,
                     val_df=X_inner_val,
-                    model=model
+                    model=model,
+                    params=params
                 )
 
-                #max pred and label
-                p0 = val_probs[:, 0]
-                p1 = val_probs[:, 1]
-                pred_labels = val_probs[:, 2]
-                max_probs = np.maximum(p0, p1)
-                max_probs = np.concatenate([max_probs[:, None], pred_labels[:, None]], axis=1)
-                val_f1, val_precision, val_recall = get_f1_precision_recall(pred_labels, y_inner_val)
-                val_ece = get_ece(max_probs, y_inner_val)
-                p1_labels = np.concatenate([p1[:, None], pred_labels[:, None]], axis=1)
-                val_auc = get_roc_auc(p1_labels, y_inner_val)
+                metrics = get_metrics(val_probs, y_inner_val)
 
-                inner_val_f1s.append(val_f1)
-                inner_val_precisions.append(val_precision)
-                inner_val_recalls.append(val_recall)
-                inner_val_eces.append(val_ece)
-                inner_val_aucs.append(val_auc)
+                inner_val_f1s.append(metrics["f1"])
+                inner_val_precisions.append(metrics["precision"])
+                inner_val_recalls.append(metrics["recall"])
+                inner_val_accuracies.append(metrics["accuracy"])
+                inner_val_eces.append(metrics["ece"])
+                inner_val_aucs.append(metrics["auc"])
 
             file_name = f"{save_path}/train_results.csv"
             for idx in range(len(inner_folds)):
@@ -198,6 +215,7 @@ def run_nested_cv(df: pd.DataFrame,
                     "inner_fold_idx": [idx + 1],
                     "param_idx": [p_idx + 1],
                     "fold": [idx + 1],
+                    "accuracy": [inner_val_accuracies[idx]],
                     "f1": [inner_val_f1s[idx]],
                     "precision": [inner_val_precisions[idx]],
                     "recall": [inner_val_recalls[idx]],
@@ -211,10 +229,6 @@ def run_nested_cv(df: pd.DataFrame,
             if mean_inner_auc > best_inner_score:
                 best_inner_score = mean_inner_auc
                 best_params = params
-                # Save the best model for current outer fold
-                if save_path is not None:
-                    model.save_model(f"{save_path}/best_model_fold_{outer_fold_idx + 1}")
-                    logger.info(f"Saved best model of inner fold {outer_fold_idx + 1} to {save_path}")
 
         
         logger.info(f"  Best params for inner fold {outer_fold_idx + 1}/{outer_k}: {best_params} with score {best_inner_score}")
@@ -223,21 +237,40 @@ def run_nested_cv(df: pd.DataFrame,
         # Shift the outer training set to match the target ratio
         X_outer_train_shifted = subsample_to_ratio(X_outer_train, target_col, target_ratio)
 
+        # Update model config with the best hyperparameters found in the inner folds
+        if best_params is None:
+            raise ValueError("Something went wrong: No best hyperparameters found from inner folds.")
+        model = get_model(target_col, continuous_cols, categorical_cols, model_config)
+        model = update_model_config(model, best_params)
+
         outer_val_probs = train_eval(
             train_df=X_outer_train_shifted,
             val_df=X_outer_test,
             model=model
         )
 
-        outer_val_auc = get_roc_auc(outer_val_probs, y_outer_test)
-        logger.info(f"Outer fold {outer_fold_idx + 1}/{outer_k}: AUC = {outer_val_auc}")
-        outer_f1, outer_precision, outer_recall = get_f1_precision_recall(outer_val_probs[:, 1], y_outer_test)
-        outer_ece = get_ece(outer_val_probs, y_outer_test)
+        # Save the best model for current outer fold
+        if save_path is not None:
+            model.save_model(f"{save_path}/best_model_fold_{outer_fold_idx + 1}")
+            logger.info(f"Saved best model of outer fold {outer_fold_idx + 1} to {save_path}")
+
+        metrics = get_metrics(outer_val_probs, y_outer_test)
+        outer_auc = metrics["auc"]
+        outer_f1 = metrics["f1"]
+        outer_precision = metrics["precision"]
+        outer_recall = metrics["recall"]
+        outer_ece = metrics["ece"]
+        outer_accuracy = metrics["accuracy"]
+
         outer_f1_scores.append(outer_f1)
         outer_precision_scores.append(outer_precision)
         outer_recall_scores.append(outer_recall)
         outer_ece_scores.append(outer_ece)
-        outer_auc_scores.append(outer_val_auc)
+        outer_accuracy_scores.append(outer_accuracy)
+        outer_auc_scores.append(outer_auc)
+
+        logger.info(f"Outer fold {outer_fold_idx + 1}/{outer_k}: AUC = {outer_auc}, Accuracy = {outer_accuracy}, F1 = {outer_f1}, Precision = {outer_precision}, Recall = {outer_recall}, ECE = {outer_ece}")
+
 
         # Append these results to a csv
         file_name = f"{save_path}/test_results.csv"
@@ -245,10 +278,11 @@ def run_nested_cv(df: pd.DataFrame,
             "param_idx": [p_idx + 1],
             "fold": [outer_fold_idx + 1],
             "f1": [outer_f1],
+            "accuracy": [outer_accuracy],
             "precision": [outer_precision],
             "recall": [outer_recall],
             "ece": [outer_ece],
-            "auc": [outer_val_auc]
+            "auc": [outer_auc]
         }).to_csv(file_name, mode="a", header=not os.path.exists(file_name), index=False)
 
     # Final Mean & Std.dev across outer folds
@@ -287,36 +321,39 @@ def run_nested_cv(df: pd.DataFrame,
 if __name__ == "__main__":
 
     arg_parser = argparse.ArgumentParser()
+    arg_parser.add_argument("-f", "--file", type=str, help="Path to the input CSV file", default="./temp/processed_data_1_3.csv")
     arg_parser.add_argument("-d", "--debug", action="store_true", help="Enable debug mode")
+    arg_parser.add_argument("-r", "--ratio", type=float, help="Target ratio for subsampling")
     args = arg_parser.parse_args()
-    df = pd.read_csv("./temp/processed_data_1_3.csv")
+    df = pd.read_csv(args.file)
 
     debug = args.debug
+    target_ratio = args.ratio
+
+    if target_ratio is None or target_ratio <= 0 or target_ratio > 1:
+        raise ValueError("Target ratio must be a float between 0 and 1.")
 
     if debug:
         df = subsample_to_ratio(df, target_col="TARGET", target_ratio=0.20, max_samples=100, seed=50)
-
-    # df = df.sample(frac=0.12, random_state=50)
 
     model_name = "ft_transformer"
 
     cont_cols, cat_cols = get_continuous_categorical_columns()
 
-    #For TF-transformer, since cat_cols has been one-hot encoded, we don't need to pass them as categorical features.
-    # cont_cols = cont_cols + cat_cols
-
     param_grid = None
     model_config = None
 
+    # If defining hyperparameter grid for custom loss, make sure to use floats
     param_grid = {
-                "num_attn_blocks": [1, 2, 4]
+                "custom_loss": [[1.0,1.0], [0.1,0.9], [0.3,0.7]]
             }
 
+    # Hyperparams determined by results of previous experiments
     model_config = FTTransformerConfig(
         task="classification",
-        learning_rate=9e-4,
-        input_embed_dim=32,
-        num_heads=8,
+        learning_rate=8e-5,
+        input_embed_dim=64,
+        num_heads=16,
         num_attn_blocks=2
     )
 
@@ -330,9 +367,9 @@ if __name__ == "__main__":
         target_col="TARGET",
         continuous_cols=cont_cols,
         categorical_cols=cat_cols,
-        target_ratio=0.30,
+        target_ratio=target_ratio,
         outer_k=10,
-        inner_k=5,
+        inner_k=3,
         param_grid=param_grid,
         debug=debug,
         model_config=model_config,
