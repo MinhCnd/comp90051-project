@@ -1,3 +1,4 @@
+from itertools import product
 import numpy as np
 import pandas as pd
 
@@ -100,4 +101,23 @@ def subsample_to_ratio(df: pd.DataFrame, target_col: str, target_ratio: float, m
     # Shuffle the subsampled dataframe to ensure random order of samples
     subsampled_df = subsampled_df.sample(frac=1, random_state=seed).reset_index(drop=True)
     return subsampled_df
+
+def generate_parameters(param_grid: dict) -> list[dict]:
+    """Generate all combinations of parameters from a parameter grid.
+
+    Args:
+        param_grid (dict): Dictionary where keys are parameter names and values are lists of parameter settings to try.
+
+    Returns:
+        list[dict]: A list of dictionaries, each representing a unique combination of parameters.
+    """
+    
+    items = sorted(param_grid.items())
+
+    if not items:
+        return [{}]
+
+    keys, values = zip(*items)
+    return [dict(zip(keys, v)) for v in product(*values)]
+
 
