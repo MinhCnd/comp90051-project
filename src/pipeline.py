@@ -100,6 +100,12 @@ def subsample_to_ratio(df: pd.DataFrame, target_col: str, target_ratio: float, m
 
     # Shuffle the subsampled dataframe to ensure random order of samples
     subsampled_df = subsampled_df.sample(frac=1, random_state=seed).reset_index(drop=True)
+
+    # Check target class ratio
+    actual_ratio = np.mean(subsampled_df[target_col] == 1)
+    if abs(actual_ratio - target_ratio) > 0.05:
+        raise ValueError(f"Subsampled class ratio {actual_ratio:.4f} differs from target ratio {target_ratio:.4f}")
+    
     return subsampled_df
 
 def generate_parameters(param_grid: dict) -> list[dict]:
