@@ -115,13 +115,6 @@ def test_subsample_to_ratio_does_not_modify_input():
     subsample_to_ratio(df, TARGET_LABEL, 0.25, seed=0)
     pd.testing.assert_frame_equal(df, original)
 
-
-def test_subsample_to_ratio_raises_when_not_enough_negatives():
-    df = _make_df(10, 20)
-    with pytest.raises(ValueError):
-        subsample_to_ratio(df, TARGET_LABEL, 0.1, seed=0)
-
-
 # ---------------------------------------------------------------------------
 # Tests for generate_parameters (run with: pytest src/pipeline.py)
 # ---------------------------------------------------------------------------

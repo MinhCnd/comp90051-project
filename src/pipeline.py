@@ -98,7 +98,7 @@ def subsample_to_ratio(df: pd.DataFrame, target_col: str, target_ratio: float, m
         if n_pos == 0:
             raise ValueError("Not enough positive samples to achieve the target ratio after adjusting negative samples.")
 
-        df_pos = df_pos.iloc[:n_pos]
+        df_pos = df_pos.sample(n=n_pos, random_state=seed)
 
     sampled_neg_indx = np.random.choice(n_neg, size=n_neg_wanted, replace=False)
     df_neg_sampled = df_neg.iloc[sampled_neg_indx]
