@@ -14,9 +14,10 @@ from pytorch_tabular import TabularModel
 from pytorch_tabular.config import DataConfig, ExperimentConfig, OptimizerConfig, TrainerConfig, ModelConfig
 from pytorch_tabular.models import FTTransformerConfig
 
-from src.metrics import get_roc_auc, get_ece, get_f1_precision_recall, get_metrics
+from src.metrics import get_metrics
 from src.pipeline import (get_continuous_categorical_columns,
                           stratified_k_fold_split, subsample_to_ratio, generate_parameters)
+from sklearn.model_selection import train_test_split
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -41,6 +42,22 @@ def update_model_config(model: TabularModel, params: dict) -> TabularModel:
         else:
             logger.warning(f"Unknown model config hyperparameter '{key}' ignored.")
     return model
+
+def check_class_ratio(labels: np.ndarray, name: str, target_ratio: float, tolerance: float = 0.05) -> None:
+    """Check if the class ratio of the given labels matches the target ratio.
+
+    Args:
+        labels (np.ndarray): Array of labels.
+        name (str): Name of the dataset or split being checked.
+        target_ratio (float): Target class ratio for the positive class.
+        tolerance (float, optional): Allowed deviation from the target ratio. Defaults to 0.05.
+
+    Raises:
+        ValueError: If the class ratio differs from the target ratio by more than the specified tolerance.
+    """
+    class_ratio = np.mean(labels == 1)
+    if abs(class_ratio - target_ratio) > tolerance:
+        raise ValueError(f"Class ratio for {name} {class_ratio:.4f} differs from target ratio {target_ratio:.4f}")
 
 @timer
 def get_model(target_col: str, continuous_cols: list[str], categorical_cols: list[str], model_config: ModelConfig) -> TabularModel:
@@ -77,21 +94,19 @@ def get_model(target_col: str, continuous_cols: list[str], categorical_cols: lis
     )
     return tabular_model
 
-def train_eval(train_df: pd.DataFrame, 
+def train(train_df: pd.DataFrame, 
                 val_df: pd.DataFrame,
                 model: TabularModel,
-                params: Optional[dict] = None) -> np.ndarray:
+                params: Optional[dict] = None) -> None:
     """
-    Train and evaluate the FTTransformer model.
-
+    Train the FTTransformer model.
+    
     Args:
         train_df (pd.DataFrame): Training dataframe as a Pandas DataFrame.
         val_df (pd.DataFrame): Validation dataframe as a Pandas DataFrame.
         model (TabularModel): The PyTorch Tabular model to be trained and evaluated.
         params (Optional[dict], optional): Additional parameters for training. Defaults to None.
 
-    Returns:
-        np.ndarray: Prediction probabilities for both classes and labels for the validation set.
     """
 
     weights_tensor = torch.tensor([1.0, 1.0])
@@ -103,6 +118,17 @@ def train_eval(train_df: pd.DataFrame,
 
     model.fit(train_df, validation=val_df, loss=custom_loss)
 
+def eval(model: TabularModel, val_df: pd.DataFrame) -> np.ndarray:
+    """
+    Evaluate the FTTransformer model on the validation set.
+
+    Args:
+        model (TabularModel): The PyTorch Tabular model to be evaluated.
+        val_df (pd.DataFrame): Validation dataframe as a Pandas DataFrame.
+
+    Returns:
+        np.ndarray: Prediction probabilities for both classes and labels for the validation set.
+    """
     preds = model.predict(val_df)
     if 'TARGET_1_probability' not in preds.columns or 'TARGET_prediction' not in preds.columns or 'TARGET_0_probability' not in preds.columns:
         raise ValueError("Expected columns 'TARGET_0_probability', 'TARGET_1_probability' and 'TARGET_prediction' not found in predictions.")
@@ -166,6 +192,8 @@ def run_nested_cv(df: pd.DataFrame,
         logger.info(f"Starting outer fold {outer_fold_idx + 1}/{outer_k}")
         X_outer_train, X_outer_test = df.iloc[train_idx], df.iloc[test_idx]
         y_outer_train, y_outer_test = y_all[train_idx], y_all[test_idx]
+
+        target_test_ratio = np.mean(y_all == 1)
         
         inner_folds = stratified_k_fold_split(y_outer_train, k=inner_k, seed=100+outer_fold_idx)
 
@@ -187,18 +215,21 @@ def run_nested_cv(df: pd.DataFrame,
                 X_inner_train, X_inner_val = X_outer_train.iloc[inner_train_idx], X_outer_train.iloc[inner_val_idx]
                 y_inner_val = y_outer_train[inner_val_idx]
 
+                check_class_ratio(y_inner_val, "Inner Validation", target_test_ratio, tolerance=0.1)
+
                 X_inner_train_shifted = subsample_to_ratio(X_inner_train, target_col, target_ratio)
 
                 model = get_model(target_col, continuous_cols, categorical_cols, model_config)
                 model = update_model_config(model, params)
 
-                val_probs = train_eval(
+                train(
                     train_df=X_inner_train_shifted,
                     val_df=X_inner_val,
                     model=model,
                     params=params
                 )
 
+                val_probs = eval(model, X_inner_val)
                 metrics = get_metrics(val_probs, y_inner_val)
 
                 inner_val_f1s.append(metrics["f1"])
@@ -234,8 +265,19 @@ def run_nested_cv(df: pd.DataFrame,
         logger.info(f"  Best params for inner fold {outer_fold_idx + 1}/{outer_k}: {best_params} with score {best_inner_score}")
 
         # Outer Evaluation: Final Training & testing
+        # Split the outer train set into train and validation sets
+        X_outer_fit, X_outer_val, y_outer_train, y_outer_val = train_test_split(
+            X_outer_train,
+            y_outer_train,
+            test_size=0.15,
+            random_state=42,
+            stratify=y_outer_train
+        )
+
+        check_class_ratio(y_outer_test, "Outer Test", target_test_ratio, tolerance=0.1)
+        
         # Shift the outer training set to match the target ratio
-        X_outer_train_shifted = subsample_to_ratio(X_outer_train, target_col, target_ratio)
+        X_outer_train_shifted = subsample_to_ratio(X_outer_fit, target_col, target_ratio, seed=42)
 
         # Update model config with the best hyperparameters found in the inner folds
         if best_params is None:
@@ -243,11 +285,14 @@ def run_nested_cv(df: pd.DataFrame,
         model = get_model(target_col, continuous_cols, categorical_cols, model_config)
         model = update_model_config(model, best_params)
 
-        outer_val_probs = train_eval(
+        train(
             train_df=X_outer_train_shifted,
-            val_df=X_outer_test,
-            model=model
+            val_df=X_outer_val,
+            model=model,
+            params=best_params
         )
+
+        outer_val_probs = eval(model, X_outer_test)
 
         # Save the best model for current outer fold
         if save_path is not None:
