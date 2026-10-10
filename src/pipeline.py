@@ -1,7 +1,10 @@
 from itertools import product
 import numpy as np
 import pandas as pd
+import logging
 
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
 def split_feature_and_target(df: pd.DataFrame, target_column: str) -> tuple[pd.DataFrame, pd.Series]:
     X: pd.DataFrame = df.drop(columns=[target_column])
@@ -77,16 +80,27 @@ def subsample_to_ratio(df: pd.DataFrame, target_col: str, target_ratio: float, m
     df_neg = df[df[target_col] == 0]
 
     n_pos = len(df_pos)
-
+    n_neg = len(df_neg)
+    
     if n_pos == 0:
         raise ValueError("No positive samples found in the dataframe.")
+    if n_neg == 0:
+        raise ValueError("No negative samples found in the dataframe.")
     
     n_neg_wanted = int(n_pos * (1 - target_ratio) / target_ratio)
 
-    if n_neg_wanted > len(df_neg):
-        raise ValueError("Not enough samples in class 0 to achieve the target ratio.")
 
-    sampled_neg_indx = np.random.choice(len(df_neg), size=n_neg_wanted, replace=False)
+    if n_neg_wanted > len(df_neg):
+        logger.warning(f"Not enough samples in class 0 to achieve the target ratio. Needed {n_neg_wanted}, but only {len(df_neg)} available. Attempt to reduce the number of negative samples to {len(df_neg)}.")
+        n_neg_wanted = len(df_neg)
+        n_pos = int(n_neg_wanted * target_ratio / (1 - target_ratio))
+
+        if n_pos == 0:
+            raise ValueError("Not enough positive samples to achieve the target ratio after adjusting negative samples.")
+
+        df_pos = df_pos.iloc[:n_pos]
+
+    sampled_neg_indx = np.random.choice(n_neg, size=n_neg_wanted, replace=False)
     df_neg_sampled = df_neg.iloc[sampled_neg_indx]
 
     if max_samples is not None and n_pos + n_neg_wanted > max_samples:

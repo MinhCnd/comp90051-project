@@ -266,7 +266,7 @@ def run_nested_cv(df: pd.DataFrame,
 
         # Outer Evaluation: Final Training & testing
         # Split the outer train set into train and validation sets
-        X_outer_train, X_outer_val, y_outer_train, y_outer_val = train_test_split(
+        X_outer_fit, X_outer_val, y_outer_train, y_outer_val = train_test_split(
             X_outer_train,
             y_outer_train,
             test_size=0.15,
@@ -277,7 +277,7 @@ def run_nested_cv(df: pd.DataFrame,
         check_class_ratio(y_outer_test, "Outer Test", target_test_ratio, tolerance=0.1)
         
         # Shift the outer training set to match the target ratio
-        X_outer_train_shifted = subsample_to_ratio(X_outer_train, target_col, target_ratio, seed=42)
+        X_outer_train_shifted = subsample_to_ratio(X_outer_fit, target_col, target_ratio, seed=42)
 
         # Update model config with the best hyperparameters found in the inner folds
         if best_params is None:
