@@ -97,7 +97,7 @@ def get_model(target_col: str, continuous_cols: list[str], categorical_cols: lis
 def train(train_df: pd.DataFrame, 
                 val_df: pd.DataFrame,
                 model: TabularModel,
-                params: Optional[dict] = None) -> np.ndarray:
+                params: Optional[dict] = None) -> None:
     """
     Train the FTTransformer model.
     
@@ -193,7 +193,7 @@ def run_nested_cv(df: pd.DataFrame,
         X_outer_train, X_outer_test = df.iloc[train_idx], df.iloc[test_idx]
         y_outer_train, y_outer_test = y_all[train_idx], y_all[test_idx]
 
-        target_test_ratio = np.mean(y_outer_test == 1)
+        target_test_ratio = np.mean(y_all == 1)
         
         inner_folds = stratified_k_fold_split(y_outer_train, k=inner_k, seed=100+outer_fold_idx)
 
