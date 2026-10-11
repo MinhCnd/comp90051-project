@@ -38,7 +38,8 @@ def run_nested_cv_log_reg(df: pd.DataFrame,
     inner_k=10, 
     param_grid: list[float]| None = None,
     debug: bool = False,
-    save_path: str | None = None):
+    save_path: str | None = None,
+    prefix: str = ""):
     """
     Run nested cross-validation for the FTTransformer model.
 
@@ -119,7 +120,7 @@ def run_nested_cv_log_reg(df: pd.DataFrame,
                 inner_val_eces.append(metrics["ece"])
                 inner_val_aucs.append(metrics["auc"])
 
-            file_name = f"{save_path}/train_results.csv"
+            file_name = f"{save_path}/{prefix}_train_results.csv"
             for idx in range(len(inner_folds)):
                 pd.DataFrame({
                     "outer_fold_idx": [outer_fold_idx + 1],
@@ -182,7 +183,7 @@ def run_nested_cv_log_reg(df: pd.DataFrame,
 
 
         # Append these results to a csv
-        file_name = f"{save_path}/test_results.csv"
+        file_name = f"{save_path}/{prefix}_test_results.csv"
         pd.DataFrame({
             "param_idx": [p_idx + 1],
             "fold": [outer_fold_idx + 1],
@@ -233,9 +234,11 @@ if __name__ == "__main__":
     arg_parser.add_argument("-f", "--file", type=str, help="Path to the input CSV file", default="./temp/processed_data_1_3.csv")
     arg_parser.add_argument("-d", "--debug", action="store_true", help="Enable debug mode")
     arg_parser.add_argument("-r", "--ratio", type=float, help="Target ratio for subsampling")
+    arg_parser.add_argument("-p", "--prefix", type=str, help="Prefix for the output files", default="")
     args = arg_parser.parse_args()
     df = pd.read_csv(args.file)
 
+    prefix = args.prefix
     debug = args.debug
     target_ratio = args.ratio
 
@@ -270,6 +273,8 @@ if __name__ == "__main__":
         inner_k=3,
         param_grid=param_grid,
         debug=debug,
-        save_path=model_save_path
+        save_path=model_save_path,
+        prefix=prefix
     )
+    
     
