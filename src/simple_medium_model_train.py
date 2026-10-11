@@ -333,7 +333,6 @@ if __name__ == "__main__":
     # If defining hyperparameter grid for custom loss, make sure to use floats
 
 
-    
 
     logger.info(f"Running nested CV with model: {model_name}")
 
