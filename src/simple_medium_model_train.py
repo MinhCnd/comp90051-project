@@ -3,11 +3,13 @@ import functools
 import time
 import os
 import logging
+from typing import Callable
 import pandas as pd
 import numpy as np
 import numpy as np
 import pandas as pd
 from .simple_models import simple_logistic_regression_results
+from .medium_model import medium_gradient_boosting_results
 
 from src.metrics import get_metrics, best_f1_threshold
 from src.pipeline import (get_continuous_categorical_columns,
@@ -29,9 +31,11 @@ def timer(func):
     return wrapper
 
 simple_logistic_regression_results_timed = timer(simple_logistic_regression_results)
+medium_gradient_boosting_results_timed = timer(medium_gradient_boosting_results)
 
 
-def run_nested_cv_log_reg(df: pd.DataFrame, 
+
+def run_nested_cv(df: pd.DataFrame, 
     target_col: str, 
     target_ratio=0.08, 
     outer_k=10, 
@@ -39,7 +43,8 @@ def run_nested_cv_log_reg(df: pd.DataFrame,
     param_grid: list[float]| None = None,
     debug: bool = False,
     save_path: str | None = None,
-    prefix: str = ""):
+    prefix: str = "",
+    model_choice: Callable = simple_logistic_regression_results_timed):
     """
     Run nested cross-validation for the FTTransformer model.
 
@@ -113,7 +118,7 @@ def run_nested_cv_log_reg(df: pd.DataFrame,
                 X_inner_train_shifted = subsample_to_ratio(X_inner_train, target_col, target_ratio)
 
                 
-                val_probs = simple_logistic_regression_results_timed(
+                val_probs = model_choice(
                     X_inner_train_shifted.drop(columns=[target_col]).values,
                     X_inner_train_shifted[target_col].values,
                     X_inner_val.drop(columns=[target_col]).values,
@@ -152,7 +157,7 @@ def run_nested_cv_log_reg(df: pd.DataFrame,
             mean_inner_auc = np.mean(inner_val_aucs)
             mean_inner_f1 = np.mean(inner_val_f1s)
             candidate_scores.append((params, mean_inner_auc, mean_inner_f1))
-            logger.info(f" Param Candidate {p_idx + 1} (lambda={params}): Mean Inner AUC = {mean_inner_auc:.4f}, Mean Inner F1 = {mean_inner_f1:.4f}")
+            logger.info(f" Param Candidate {p_idx + 1} (params={params}): Mean Inner AUC = {mean_inner_auc:.4f}, Mean Inner F1 = {mean_inner_f1:.4f}")
             if mean_inner_auc > best_inner_score:
                 best_inner_score = mean_inner_auc
                 best_params = params
@@ -178,7 +183,7 @@ def run_nested_cv_log_reg(df: pd.DataFrame,
             raise ValueError("Something went wrong: No best hyperparameters found from inner folds.")
 
         
-        outer_val_probs = simple_logistic_regression_results_timed(
+        outer_val_probs = model_choice(
             X_outer_train_shifted.drop(columns=[target_col]).values,
             X_outer_train_shifted[target_col].values,
             X_outer_test.drop(columns=[target_col]).values,
@@ -293,6 +298,7 @@ if __name__ == "__main__":
     arg_parser.add_argument("-d", "--debug", action="store_true", help="Enable debug mode")
     arg_parser.add_argument("-r", "--ratio", type=float, help="Target ratio for subsampling")
     arg_parser.add_argument("-p", "--prefix", type=str, help="Prefix for the output files", default="")
+    arg_parser.add_argument("-m", "--model", type=str, help="Model choice: 'simple' or 'medium'", default="simple")
     args = arg_parser.parse_args()
     df = pd.read_csv(args.file)
 
@@ -300,21 +306,32 @@ if __name__ == "__main__":
     debug = args.debug
     target_ratio = args.ratio
 
+    if args.model not in ["simple", "medium"]:
+        raise ValueError("Model choice must be either 'simple' or 'medium'.")
+    
+    param_grid = None
+    model_choice = None
+
+    if args.model == "simple":
+        param_grid = [0.01, 0.1, 1.0, 10.0, 100.0]
+        model_choice = simple_logistic_regression_results_timed
+    else:   
+        param_grid = [0.5,1.0, 3.0, 5.0, 10.0] # Example hyperparameter grid for medium model
+        model_choice = medium_gradient_boosting_results_timed
+
     if target_ratio is None or target_ratio <= 0 or target_ratio > 1:
         raise ValueError("Target ratio must be a float between 0 and 1.")
 
     if debug:
         df = subsample_to_ratio(df, target_col="TARGET", target_ratio=0.20, max_samples=100, seed=50)
 
-    model_name = "logistic_regression_with_l1_regularization"
-
+    model_name = "logistic_regression_l1" if args.model == "simple" else "xgboost"
     cont_cols, cat_cols = get_continuous_categorical_columns()
 
-    param_grid = None
     model_config = None
 
     # If defining hyperparameter grid for custom loss, make sure to use floats
-    param_grid = [ 0.01, 0.1, 1.0, 10.0, 100.0 ]
+
 
     
 
@@ -323,7 +340,7 @@ if __name__ == "__main__":
     model_save_path = "./output"
     os.makedirs(model_save_path, exist_ok=True)
 
-    res = run_nested_cv_log_reg(
+    res = run_nested_cv(
         df=df[["TARGET"] + cont_cols + cat_cols],
         target_col="TARGET",
         target_ratio=target_ratio,
@@ -332,7 +349,8 @@ if __name__ == "__main__":
         param_grid=param_grid,
         debug=debug,
         save_path=model_save_path,
-        prefix=prefix
+        prefix=prefix,
+        model_choice=model_choice
     )
 
     
