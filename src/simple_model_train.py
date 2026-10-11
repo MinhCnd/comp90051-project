@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 from .simple_models import simple_logistic_regression_results
 
-from src.metrics import get_metrics
+from src.metrics import get_metrics, best_f1_threshold
 from src.pipeline import (get_continuous_categorical_columns,
                           stratified_k_fold_split, subsample_to_ratio)
 
@@ -70,6 +70,10 @@ def run_nested_cv_log_reg(df: pd.DataFrame,
     outer_auc_scores = []
     outer_accuracy_scores = []
     outer_ece_scores = []
+    outer_thresholds = []
+    outer_best_threshold_f1_scores = []
+    outer_best_threshold_precisions = []
+    outer_best_threshold_recalls = []
 
     y_all = df[target_col].values
     outer_folds = stratified_k_fold_split(y_all, k=outer_k, seed=23)
@@ -85,6 +89,9 @@ def run_nested_cv_log_reg(df: pd.DataFrame,
 
         best_params = None
         best_inner_score = -np.inf
+        best_threshold = 0.5
+        candidate_scores = []
+
 
         for p_idx, params in enumerate(param_grid):
             inner_val_f1s = []
@@ -94,6 +101,8 @@ def run_nested_cv_log_reg(df: pd.DataFrame,
             inner_val_eces = []
             inner_val_aucs = []
             inner_val_accuracies = []
+            inner_val_threshold  = []
+            
 
             fold_idx = 0
             for inner_train_idx, inner_val_idx in inner_folds:
@@ -112,6 +121,7 @@ def run_nested_cv_log_reg(df: pd.DataFrame,
                 )
 
                 metrics = get_metrics(val_probs, y_inner_val)
+                threshold, _ = best_f1_threshold(val_probs[:, 1], y_inner_val)
 
                 inner_val_f1s.append(metrics["f1"])
                 inner_val_precisions.append(metrics["precision"])
@@ -119,6 +129,7 @@ def run_nested_cv_log_reg(df: pd.DataFrame,
                 inner_val_accuracies.append(metrics["accuracy"])
                 inner_val_eces.append(metrics["ece"])
                 inner_val_aucs.append(metrics["auc"])
+                inner_val_threshold.append(threshold)
 
             file_name = f"{save_path}/{prefix}_train_results.csv"
             for idx in range(len(inner_folds)):
@@ -127,22 +138,35 @@ def run_nested_cv_log_reg(df: pd.DataFrame,
                     "inner_fold_idx": [idx + 1],
                     "param_idx": [p_idx + 1],
                     "fold": [idx + 1],
+                    "params": [str(params)],
                     "accuracy": [inner_val_accuracies[idx]],
                     "f1": [inner_val_f1s[idx]],
                     "precision": [inner_val_precisions[idx]],
                     "recall": [inner_val_recalls[idx]],
                     "ece": [inner_val_eces[idx]],
-                    "auc": [inner_val_aucs[idx]]
+                    "auc": [inner_val_aucs[idx]],
+                    "threshold": [inner_val_threshold[idx]]
                 }).to_csv(file_name, mode="a", header=not os.path.exists(file_name), index=False)
 
             # Log the mean inner fold metrics for the current parameter candidate
             mean_inner_auc = np.mean(inner_val_aucs)
-            logger.debug(f" Param Candidate {p_idx + 1} ({params}): Mean Inner AUC = {mean_inner_auc:.4f}")
+            mean_inner_f1 = np.mean(inner_val_f1s)
+            candidate_scores.append((params, mean_inner_auc, mean_inner_f1))
+            logger.info(f" Param Candidate {p_idx + 1} (lambda={params}): Mean Inner AUC = {mean_inner_auc:.4f}, Mean Inner F1 = {mean_inner_f1:.4f}")
             if mean_inner_auc > best_inner_score:
                 best_inner_score = mean_inner_auc
                 best_params = params
+                best_threshold = float(np.median(inner_val_threshold))
 
-        
+        file_name = f"{save_path}/{prefix}_candidate_scores.csv"
+        for params, c_auc, c_f1 in candidate_scores:
+            pd.DataFrame({
+                "outer_fold_idx": [outer_fold_idx + 1],
+                "params": [params],
+                "mean_inner_auc": [c_auc],
+                "mean_inner_f1": [c_f1],
+                "selected": [params == best_params],
+            }).to_csv(file_name, mode="a", header=not os.path.exists(file_name), index=False)
         logger.info(f"  Best params for inner fold {outer_fold_idx + 1}/{outer_k}: {best_params} with score {best_inner_score}")
 
         # Outer Evaluation: Final Training & testing
@@ -171,6 +195,16 @@ def run_nested_cv_log_reg(df: pd.DataFrame,
         outer_recall = metrics["recall"]
         outer_ece = metrics["ece"]
         outer_accuracy = metrics["accuracy"]
+        outer_preds = (outer_val_probs[:, 1] >= best_threshold).astype(int)
+        n_pred_pos_default = int(outer_val_probs[:, 2].sum())
+        n_pred_pos_threshold = int(outer_preds.sum())
+        thresholded = np.column_stack([
+            outer_val_probs[:, 0],   # p0, unchanged
+            outer_val_probs[:, 1],   # p1, unchanged
+            outer_preds,             # labels at the chosen threshold
+        ])
+        metrics_at_threshold = get_metrics(thresholded, y_outer_test)
+
 
         outer_f1_scores.append(outer_f1)
         outer_precision_scores.append(outer_precision)
@@ -178,6 +212,13 @@ def run_nested_cv_log_reg(df: pd.DataFrame,
         outer_ece_scores.append(outer_ece)
         outer_accuracy_scores.append(outer_accuracy)
         outer_auc_scores.append(outer_auc)
+        outer_thresholds.append(best_threshold)
+        outer_best_threshold_f1_scores.append(metrics_at_threshold["f1"])
+        outer_best_threshold_precisions.append(metrics_at_threshold["precision"])
+        outer_best_threshold_recalls.append(metrics_at_threshold["recall"])
+    
+
+
 
         logger.info(f"Outer fold {outer_fold_idx + 1}/{outer_k}: AUC = {outer_auc}, Accuracy = {outer_accuracy}, F1 = {outer_f1}, Precision = {outer_precision}, Recall = {outer_recall}, ECE = {outer_ece}")
 
@@ -185,14 +226,20 @@ def run_nested_cv_log_reg(df: pd.DataFrame,
         # Append these results to a csv
         file_name = f"{save_path}/{prefix}_test_results.csv"
         pd.DataFrame({
-            "param_idx": [p_idx + 1],
+            "best params": [str(best_params)],
             "fold": [outer_fold_idx + 1],
             "f1": [outer_f1],
             "accuracy": [outer_accuracy],
             "precision": [outer_precision],
             "recall": [outer_recall],
             "ece": [outer_ece],
-            "auc": [outer_auc]
+            "auc": [outer_auc],
+            "best_threshold": [best_threshold],
+            "f1_at_best_threshold": [metrics_at_threshold["f1"]],
+            "precision_at_best_threshold": [metrics_at_threshold["precision"]],
+            "recall_at_best_threshold": [metrics_at_threshold["recall"]],
+            "n_pred_pos_default": [n_pred_pos_default],
+            "n_pred_pos_threshold": [n_pred_pos_threshold],
         }).to_csv(file_name, mode="a", header=not os.path.exists(file_name), index=False)
 
     # Final Mean & Std.dev across outer folds
@@ -225,7 +272,18 @@ def run_nested_cv_log_reg(df: pd.DataFrame,
         "ece_std": std_outer_ece,
         "auc_mean": mean_outer_auc,
         "auc_std": std_outer_auc,
-        "outer_aucs": outer_auc_scores
+        "outer_aucs": outer_auc_scores,
+        "outer_f1s": outer_f1_scores,
+        "outer_precisions": outer_precision_scores,
+        "outer_recalls": outer_recall_scores,
+        "outer_thresholds": outer_thresholds,
+        "median_threshold": float(np.median(outer_thresholds)),
+        "f1_at_threshold_mean": float(np.mean(outer_best_threshold_f1_scores)),
+        "f1_at_threshold_std": float(np.std(outer_best_threshold_f1_scores)),
+        "precision_at_threshold_mean": float(np.mean(outer_best_threshold_precisions)),
+        "precision_at_threshold_std": float(np.std(outer_best_threshold_precisions)),
+        "recall_at_threshold_mean": float(np.mean(outer_best_threshold_recalls)),
+        "recall_at_threshold_std": float(np.std(outer_best_threshold_recalls)),
     }
 
 if __name__ == "__main__":
@@ -276,5 +334,5 @@ if __name__ == "__main__":
         save_path=model_save_path,
         prefix=prefix
     )
-    
+
     
