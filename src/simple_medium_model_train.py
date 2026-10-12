@@ -40,7 +40,7 @@ def run_nested_cv(df: pd.DataFrame,
     target_ratio=0.08, 
     outer_k=10, 
     inner_k=10, 
-    param_grid: list[float]| None = None,
+    param_grid: list[float | int]| None = None,
     debug: bool = False,
     save_path: str | None = None,
     prefix: str = "",
@@ -158,7 +158,7 @@ def run_nested_cv(df: pd.DataFrame,
             mean_inner_f1 = np.mean(inner_val_f1s)
             candidate_scores.append((params, mean_inner_auc, mean_inner_f1))
             logger.info(f" Param Candidate {p_idx + 1} (params={params}): Mean Inner AUC = {mean_inner_auc:.4f}, Mean Inner F1 = {mean_inner_f1:.4f}")
-            if mean_inner_auc > best_inner_score:
+            if mean_inner_auc > best_inner_score :
                 best_inner_score = mean_inner_auc
                 best_params = params
                 best_threshold = float(np.median(inner_val_threshold))
@@ -313,10 +313,10 @@ if __name__ == "__main__":
     model_choice = None
 
     if args.model == "simple":
-        param_grid = [0.01, 0.1, 1.0, 10.0, 100.0]
+        param_grid = [1.0, 10.0, 100.0] 
         model_choice = simple_logistic_regression_results_timed
     else:   
-        param_grid = [0.5,1.0, 3.0, 5.0, 10.0] # Example hyperparameter grid for medium model
+        param_grid = [50, 100, 200, 400, 800]# Example hyperparameter grid for medium model
         model_choice = medium_gradient_boosting_results_timed
 
     if target_ratio is None or target_ratio <= 0 or target_ratio > 1:
