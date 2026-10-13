@@ -205,6 +205,16 @@ def calculate_error_rate(predictions: np.ndarray, labels: np.ndarray) -> float:
 
     return (fn + fp) / len(predictions)
 
+def best_f1_threshold(probs, labels, grid=np.arange(0.10, 0.91, 0.01)):
+    """Return (threshold, f1) maximising F1 over the grid."""
+    best_t, best_f1 = 0.5, -1.0
+    for t in grid:
+        preds = (probs >= t).astype(int)
+        f1 = calculate_f1_score(preds, labels)
+        if f1 > best_f1:
+            best_t, best_f1 = float(t), f1
+    return best_t, best_f1
+
 def calculate_specificity(predictions: np.ndarray, labels: np.ndarray) -> float:
     """Calculate the specificity of the predictions.
 

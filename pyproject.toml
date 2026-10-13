@@ -20,6 +20,7 @@ dependencies = [
     "isort==9.0.2",
     "featuretools==1.31.0",
     "setuptools<81.0.0",
+    "xgboost>=3.4.1",
 ]
 
 [project.optional-dependencies]

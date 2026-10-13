@@ -220,7 +220,6 @@ __marimo__/
 
 data/
 temp/
-output/
 .DS_Store
 
 #Pytorch

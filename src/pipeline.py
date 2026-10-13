@@ -73,8 +73,7 @@ def subsample_to_ratio(df: pd.DataFrame, target_col: str, target_ratio: float, m
     if target_ratio <= 0 or target_ratio >= 1:
         raise ValueError("target_ratio must be between 0 and 1.")
     
-    if seed is not None:
-        np.random.seed(seed)
+    rng = np.random.default_rng(seed)
 
     df_pos = df[df[target_col] == 1]
     df_neg = df[df[target_col] == 0]
@@ -91,7 +90,11 @@ def subsample_to_ratio(df: pd.DataFrame, target_col: str, target_ratio: float, m
 
 
     if n_neg_wanted > len(df_neg):
-        logger.warning(f"Not enough samples in class 0 to achieve the target ratio. Needed {n_neg_wanted}, but only {len(df_neg)} available. Attempt to reduce the number of negative samples to {len(df_neg)}.")
+        logger.warning(
+            f"Only {len(df_neg)} negatives available but {n_neg_wanted} needed for ratio "
+            f"{target_ratio}. Keeping all negatives and reducing positives from {len(df_pos)} "
+            f"to {int(len(df_neg) * target_ratio / (1 - target_ratio))} instead."
+        )
         n_neg_wanted = len(df_neg)
         n_pos = int(n_neg_wanted * target_ratio / (1 - target_ratio))
 
@@ -100,7 +103,7 @@ def subsample_to_ratio(df: pd.DataFrame, target_col: str, target_ratio: float, m
 
         df_pos = df_pos.sample(n=n_pos, random_state=seed)
 
-    sampled_neg_indx = np.random.choice(n_neg, size=n_neg_wanted, replace=False)
+    sampled_neg_indx = rng.choice(n_neg, size=n_neg_wanted, replace=False)
     df_neg_sampled = df_neg.iloc[sampled_neg_indx]
 
     if max_samples is not None and n_pos + n_neg_wanted > max_samples:
