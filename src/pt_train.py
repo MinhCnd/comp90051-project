@@ -10,7 +10,9 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 import torch
-
+from pytorch_tabular import TabularModel
+from pytorch_tabular.config import DataConfig, ExperimentConfig, OptimizerConfig, TrainerConfig, ModelConfig
+from pytorch_tabular.models import FTTransformerConfig
 
 from src.metrics import get_metrics
 from src.pipeline import (get_continuous_categorical_columns,
