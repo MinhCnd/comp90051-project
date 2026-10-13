@@ -313,7 +313,7 @@ if __name__ == "__main__":
     model_choice = None
 
     if args.model == "simple":
-        param_grid = [1.0, 10.0, 100.0] 
+        param_grid = [0.01, 0.1, 1.0, 10.0, 100.0]
         model_choice = simple_logistic_regression_results_timed
     else:   
         param_grid = [50, 100, 200, 400, 800]# Example hyperparameter grid for medium model
