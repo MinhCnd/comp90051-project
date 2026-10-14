@@ -54,8 +54,7 @@ run_ratio_shift_t_test <- function(baseline_scores, shifted_scores_list,
                                            n_train_prop = 9000, n_test_prop = 1000, 
                                            alpha = 0.05) {
   
-  num_comparisons <- length(shifted_scores_list)
-  alpha_bonferroni <- alpha / num_comparisons
+  alpha_bonferroni <- alpha / 12
   
   results_list <- list()
   
