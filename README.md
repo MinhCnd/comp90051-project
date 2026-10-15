@@ -27,3 +27,6 @@ Alternatively you can train this on a High-RAM, GPU-enabled cloud server(AWS, Go
 
 ## XGBoost and Logistic Regression
 These models were able to be trained on a macboook air. Just call `uv run python -m pt_train -f <path to dataset> -r <sub-sampling ratio> -m <model choice, simple for log res, medium for XGBoost>`
+
+# Corrected Resampled t-test
+The t-tests ran through notebooks/t_test.R script. You need to change file paths at the start of the file and run the script
