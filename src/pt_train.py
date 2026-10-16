@@ -16,8 +16,7 @@ from pytorch_tabular.models import FTTransformerConfig
 
 from src.metrics import get_metrics
 from src.pipeline import (get_continuous_categorical_columns,
-                          stratified_k_fold_split, subsample_to_ratio, generate_parameters)
-from sklearn.model_selection import train_test_split
+                          stratified_k_fold_split, subsample_to_ratio, generate_parameters, train_test_split)
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)

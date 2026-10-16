@@ -143,4 +143,48 @@ def generate_parameters(param_grid: dict) -> list[dict]:
     keys, values = zip(*items)
     return [dict(zip(keys, v)) for v in product(*values)]
 
+def train_test_split(predictors: pd.DataFrame, labels: np.ndarray, test_size: float = 0.2, random_state: int = None, stratify: np.ndarray = None):
+    """Split the dataset into training and testing sets.
 
+    Args:
+        predictors (pd.DataFrame): Feature matrix.
+        labels (np.ndarray): Target labels.
+        test_size (float, optional): Proportion of the dataset to include in the test split. Defaults to 0.2.
+        random_state (int, optional): Random seed for reproducibility. Defaults to None.
+        stratify (np.ndarray, optional): If not None, data is split in a stratified fashion, using this as the class labels. Defaults to None.
+
+    Returns:
+        tuple: Four elements tuple containing training predictors, testing predictors, training labels, and testing labels.
+    """
+    if stratify is not None:
+        _, class_counts = np.unique(stratify, return_counts=True)
+        if np.any(class_counts * test_size < 1):
+            raise ValueError("Not enough samples in some classes to perform stratified split with the given test_size.")
+
+    n_samples = len(predictors)
+    n_test = int(n_samples * test_size)
+    n_train = n_samples - n_test
+
+    rng = np.random.default_rng(seed=random_state)
+
+    if stratify is None:
+        indices = np.arange(n_samples)
+        rng.shuffle(indices)
+        train_indices = indices[:n_train]
+        test_indices = indices[n_train:]
+    else:
+        train_indices = []
+        test_indices = []
+        for cls in np.unique(stratify):
+            cls_indices = np.where(stratify == cls)[0]
+            rng.shuffle(cls_indices)
+            n_cls_test = int(len(cls_indices) * test_size)
+            test_indices.extend(cls_indices[:n_cls_test])
+            train_indices.extend(cls_indices[n_cls_test:])
+
+    X_train = predictors.iloc[train_indices]
+    X_test = predictors.iloc[test_indices]
+    y_train = labels[train_indices]
+    y_test = labels[test_indices]
+
+    return X_train, X_test, y_train, y_test

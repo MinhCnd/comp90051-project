@@ -1,9 +1,8 @@
 import numpy as np
 import pandas as pd
 import pytest
-from typing import Generator
 
-from src.pipeline import generate_parameters, stratified_k_fold_split, subsample_to_ratio
+from src.pipeline import generate_parameters, stratified_k_fold_split, subsample_to_ratio, train_test_split
 
 TARGET_LABEL = "TARGET"
 
@@ -150,3 +149,15 @@ def test_generate_parameters_empty_grid():
 
 def test_generate_parameters_empty_value_list():
     assert list(generate_parameters({"a": [], "b": [1]})) == []
+
+def test_train_test_split_basic():
+    df = _make_df(10, 90)
+    X_train, X_test, y_train, y_test = train_test_split(
+        df[["feature"]], df[TARGET_LABEL].to_numpy(), test_size=0.2, random_state=0, stratify=df[TARGET_LABEL].to_numpy()
+    )
+    assert len(X_train) == 80
+    assert len(X_test) == 20
+    assert len(y_train) == 80
+    assert len(y_test) == 20
+    assert set(y_train).issubset({0, 1})
+    assert set(y_test).issubset({0, 1})
